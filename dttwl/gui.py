@@ -354,7 +354,7 @@ class ValidatorApp(tk.Tk):
             "poll": tk.StringVar(value=str(timing["poll_interval_seconds"])),
             "samples": tk.StringVar(value=str(timing["stable_read_samples"])),
             "timeout": tk.StringVar(value=str(timing["detect_timeout_seconds"])),
-            "output": tk.StringVar(value=str(self.settings["report"]["output_dir"] or "C:\\Users\\Public\\Documents\\DTT whitelist validation report")),
+            "output": tk.StringVar(value=str(self.settings.get("report", {}).get("output_dir", "C:\\Users\\Public\\Documents\\DTT whitelist validation report"))),
         }
 
         grid = ttk.LabelFrame(frame, text=" DTT connection ")
@@ -468,7 +468,7 @@ class ValidatorApp(tk.Tk):
             },
             "run": {"rounds": int(self.vars["rounds"].get()),
                     "mode": self.vars["mode"].get()},
-            "report": {"output_dir": self.vars["output"].get().strip() or "reports"},
+            "report": {"output_dir": self.vars["output"].get().strip() or "C:\\Users\\Public\\Documents\\DTT whitelist validation report"},
             "expected_mode_by_hint": self._hint_overrides(),
             "shortcut_folder": self.var_folder.get().strip(),
             "apps": self.apps,

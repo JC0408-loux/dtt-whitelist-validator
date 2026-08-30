@@ -61,7 +61,7 @@ DEFAULTS = {
     ],
     "search_max_depth": 4,
     "report": {
-        "output_dir": "reports",
+        "output_dir": "C:\\Users\\Public\\Documents\\DTT whitelist validation report",
         "formats": ["csv", "xlsx"],
     },
     "apps": [],
