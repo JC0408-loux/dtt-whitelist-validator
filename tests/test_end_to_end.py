@@ -884,6 +884,59 @@ class CloseSafetyTests(unittest.TestCase):
         launched = self._app(pre_existing=set(), running=[300])
         self.assertFalse(launched.joined_existing_instance())
 
+    def test_only_windows_that_appeared_after_the_launch_are_closed(self):
+        # Process ownership cannot answer which window the test opened: a
+        # single-instance application opens it inside the process that was
+        # already running. Window identity can.
+        from dttwl import winfg
+
+        launched = winfg.LaunchedApp("code.exe", pre_existing={100},
+                                     pre_existing_windows={11, 12})
+        launched.pids = [100, 300]
+        original = winfg.top_level_windows
+        winfg.top_level_windows = lambda pids: [11, 12, 13]
+        try:
+            self.assertEqual(launched.opened_windows(), [13])
+        finally:
+            winfg.top_level_windows = original
+
+    def test_a_launch_that_opened_no_window_closes_nothing(self):
+        # code.exe with VS Code already open may simply raise the window that
+        # was already there. Closing it would take the tester's editor.
+        from dttwl import winfg
+
+        launched = winfg.LaunchedApp("code.exe", pre_existing={100},
+                                     pre_existing_windows={11, 12})
+        launched.pids = [100]
+        original = winfg.top_level_windows
+        winfg.top_level_windows = lambda pids: [11, 12]
+        try:
+            self.assertEqual(launched.opened_windows(), [])
+        finally:
+            winfg.top_level_windows = original
+
+    def test_a_freshly_started_app_owns_every_window_it_shows(self):
+        from dttwl import winfg
+
+        launched = winfg.LaunchedApp("cinebench.exe", pre_existing=set(),
+                                     pre_existing_windows=set())
+        launched.pids = [300]
+        original = winfg.top_level_windows
+        winfg.top_level_windows = lambda pids: [21]
+        try:
+            self.assertEqual(launched.opened_windows(), [21])
+            self.assertFalse(launched.joined_existing_instance())
+        finally:
+            winfg.top_level_windows = original
+
+    def test_close_targets_opened_windows_not_owned_processes(self):
+        import inspect
+        from dttwl import winfg
+
+        source = inspect.getsource(winfg.close_app)
+        self.assertIn("opened_windows", source)
+        self.assertNotIn("top_level_windows(owned)", source)
+
     def test_the_force_kill_is_guarded_by_that_check(self):
         # The guard has to sit before the taskkill, not merely exist.
         import inspect

@@ -157,6 +157,7 @@ Each line is a real defect that was diagnosed on hardware.
 | ✅ | Always keep preflight | it checks AC power and the OEM variables once, instead of letting thirty applications fail for the same reason. Other testers use this tool; do not add a path that skips it. |
 
 | ❌ | Never force-kill anything when the application was already running before the launch | `taskkill /T` walks the process tree. A multi-process application (Electron, the browsers) serves the new window from the running instance and spawns helpers the launch *does* own; killing one of those helpers takes the tester's session with it. This is not hypothetical — it destroyed a VS Code someone was working in. `LaunchedApp.joined_existing_instance()` gates the kill. |
+| ❌ | Never decide what to close from process ownership alone | a single-instance application opens the new window inside the process that was already running, so "close the owned processes' windows" closes nothing. Window identity answers it: `LaunchedApp.opened_windows()` is every top-level window that was not on screen before the launch. |
 | ❌ | Never assume owning a process means owning a window | the same applications own helper processes with no window at all, so a window search restricted to owned PIDs finds nothing and the case times out with no verdict. `foreground_candidates()` widens to same-named processes when that happens. |
 
 ### On failure reporting
@@ -254,7 +255,7 @@ python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -t .
 ```
 
-**122 tests.** They must all pass before you claim anything is done. Configure
+**126 tests.** They must all pass before you claim anything is done. Configure
 this as the repository's test command so it runs automatically.
 
 The tool itself has no third-party runtime dependency — test machines are

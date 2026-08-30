@@ -202,7 +202,8 @@ def force_foreground(hwnd):
 
 
 class LaunchedApp:
-    def __init__(self, process_name, popen=None, pre_existing=None):
+    def __init__(self, process_name, popen=None, pre_existing=None,
+                 pre_existing_windows=None):
         self.process_name = process_name.lower()
         self.popen = popen
         # Processes of this name that were already running. They must never be
@@ -212,6 +213,12 @@ class LaunchedApp:
         # process tree. Their windows may still be brought to the foreground:
         # see foreground_candidates.
         self.pre_existing = set(pre_existing or ())
+        # The windows of this application that were already on screen. Process
+        # ownership cannot answer "which window is the test responsible for":
+        # a single-instance application opens the new window inside the process
+        # that was already running. Anything not in this set appeared because
+        # of the launch, and is the test's to close.
+        self.pre_existing_windows = set(pre_existing_windows or ())
         self.pids = []
         self.hwnd = None
 
@@ -253,6 +260,16 @@ class LaunchedApp:
         """True when this application was already running before the launch."""
         return bool(self.pre_existing)
 
+    def opened_windows(self):
+        """Top-level windows that were not on screen before the launch.
+
+        These are the test's to close, whichever process happens to serve
+        them. A window that was already open belongs to the tester and is
+        never touched.
+        """
+        return [hwnd for hwnd in top_level_windows(self.pids)
+                if hwnd not in self.pre_existing_windows]
+
 
 def launch(exe_path=None, shell_target=None, args=None, process_name=None,
            working_dir=None):
@@ -269,9 +286,11 @@ def launch(exe_path=None, shell_target=None, args=None, process_name=None,
         if not name:
             raise LauncherError("a shell target also needs process_name")
         before = set(pids_for_process_name(name))
+        before_windows = set(top_level_windows(before))
         # An AUMID has no spaces, so explorer.exe can be trusted with it.
         subprocess.Popen(["explorer.exe", shell_target], close_fds=True)
-        return LaunchedApp(name, pre_existing=before)
+        return LaunchedApp(name, pre_existing=before,
+                           pre_existing_windows=before_windows)
 
     if not exe_path:
         raise LauncherError("either exe_path or shell_target is required")
@@ -280,6 +299,7 @@ def launch(exe_path=None, shell_target=None, args=None, process_name=None,
 
     name = (process_name or os.path.basename(exe_path)).lower()
     before = set(pids_for_process_name(name))
+    before_windows = set(top_level_windows(before))
 
     if exe_path.lower().endswith(".lnk"):
         # os.startfile, not "explorer.exe <path>": explorer re-parses its own
@@ -287,7 +307,8 @@ def launch(exe_path=None, shell_target=None, args=None, process_name=None,
         # it opens a folder window instead - which then owns the foreground and
         # makes every reading wrong.
         os.startfile(exe_path)
-        return LaunchedApp(name, pre_existing=before)
+        return LaunchedApp(name, pre_existing=before,
+                           pre_existing_windows=before_windows)
 
     popen = subprocess.Popen(
         [exe_path] + list(args or []),
@@ -295,7 +316,8 @@ def launch(exe_path=None, shell_target=None, args=None, process_name=None,
         creationflags=CREATE_NEW_PROCESS_GROUP,
         close_fds=True,
     )
-    return LaunchedApp(name, popen=popen, pre_existing=before)
+    return LaunchedApp(name, popen=popen, pre_existing=before,
+                       pre_existing_windows=before_windows)
 
 
 def wait_for_foreground(app, timeout=30.0, poll=0.25):
@@ -332,20 +354,31 @@ def close_app(app, grace_seconds=5.0):
     _require_windows()
     app.refresh_pids()
     owned = app.owned_pids()
-    if not owned:
-        # The application joined an instance that was already running, as a
-        # browser does. Closing it would take that instance's other windows
-        # with it, so it is left alone.
-        return "left running: it joined an already-running process"
+    opened = app.opened_windows()
 
-    for hwnd in top_level_windows(owned):
+    if not owned and not opened:
+        # The launch handed the request to an instance that was already
+        # running and it opened no window of its own - it simply raised one
+        # that was already there. There is nothing here belonging to the test.
+        return "left running: it joined an already-running window"
+
+    # Close the windows this launch put on screen, whichever process serves
+    # them: a single-instance application opens the new window inside the
+    # process that was already running, so closing "owned processes' windows"
+    # would close nothing at all.
+    for hwnd in opened:
         user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
 
     deadline = time.monotonic() + grace_seconds
     while time.monotonic() < deadline:
         app.refresh_pids()
-        if not app.owned_pids():
+        if not app.owned_pids() and not app.opened_windows():
             return ""
+        if not app.opened_windows() and app.joined_existing_instance():
+            # The window this launch opened is gone. What is left are helper
+            # processes inside the instance that was already running; they are
+            # not the test's to kill.
+            return "closed the window it opened; the instance already running was left alone"
         time.sleep(0.25)
 
     app.refresh_pids()
