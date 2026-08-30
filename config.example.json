@@ -1,0 +1,438 @@
+{
+  "dtt": {
+    "host": "localhost",
+    "port": 8888,
+    "path": "/echo",
+    "policy_module": "Adaptive Performance Policy",
+    "request_timeout_seconds": 10.0
+  },
+  "timing": {
+    "debounce_buffer_seconds": 5.0,
+    "poll_interval_seconds": 2.0,
+    "stable_read_samples": 3,
+    "detect_timeout_seconds": 10.0,
+    "baseline_timeout_seconds": 20.0,
+    "app_launch_timeout_seconds": 30.0,
+    "close_grace_seconds": 5.0,
+    "settle_after_close_seconds": 1.0
+  },
+  "run": {
+    "mode": "real",
+    "rounds": 1,
+    "stop_on_first_failure": false
+  },
+  "expected_mode_by_hint": {},
+  "baseline_mode": "optimized",
+  "preflight": {
+    "require_power_source": "AC",
+    "require_oem_variables": {
+      "0": "0",
+      "4": "1"
+    },
+    "abort_on_failure": true
+  },
+  "browser_isolation": {
+    "enabled": true,
+    "process_names": [
+      "msedge.exe",
+      "chrome.exe"
+    ],
+    "extra_args": [
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--new-window",
+      "about:blank"
+    ]
+  },
+  "search_paths": [
+    "%USERPROFILE%\\Desktop",
+    "%USERPROFILE%\\Downloads",
+    "C:\\Program Files",
+    "C:\\Program Files (x86)"
+  ],
+  "search_max_depth": 4,
+  "report": {
+    "output_dir": "reports",
+    "formats": [
+      "csv",
+      "xlsx"
+    ]
+  },
+  "apps": [
+    {
+      "app_name": "chrome",
+      "process_name": "chrome.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 1,
+      "expected_mode": "optimized_WL1",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "msedge",
+      "process_name": "msedge.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 1,
+      "expected_mode": "optimized_WL1",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "olk",
+      "process_name": "olk.exe",
+      "exe_path": "",
+      "shell_target": "shell:AppsFolder\\Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookforWindows",
+      "args": [],
+      "workload_hint": 1,
+      "expected_mode": "optimized_WL1",
+      "enabled": true,
+      "notes": "Store app: launched by AUMID, not by path"
+    },
+    {
+      "app_name": "outlook",
+      "process_name": "outlook.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 1,
+      "expected_mode": "optimized_WL1",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "powerpnt",
+      "process_name": "powerpnt.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 1,
+      "expected_mode": "optimized_WL1",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "winword",
+      "process_name": "winword.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 1,
+      "expected_mode": "optimized_WL1",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "microsoft.media.player",
+      "process_name": "microsoft.media.player.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 1,
+      "expected_mode": "optimized_WL1",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "wmplayer",
+      "process_name": "wmplayer.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 1,
+      "expected_mode": "optimized_WL1",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "devenv",
+      "process_name": "devenv.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "code",
+      "process_name": "code.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmark",
+      "process_name": "3dmark.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmarkamdfsr",
+      "process_name": "3dmarkamdfsr.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmarkcpuprofile",
+      "process_name": "3dmarkcpuprofile.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmarkdirectstoragefeaturetest",
+      "process_name": "3dmarkdirectstoragefeaturetest.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmarknightraid",
+      "process_name": "3dmarknightraid.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmarkspeedway",
+      "process_name": "3dmarkspeedway.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmarksteelnomad",
+      "process_name": "3dmarksteelnomad.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmarktimespy",
+      "process_name": "3dmarktimespy.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmarkwildlifeextreme",
+      "process_name": "3dmarkwildlifeextreme.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmarkwildlife",
+      "process_name": "3dmarkwildlife.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "3dmarkicfworkload",
+      "process_name": "3dmarkicfworkload.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "geekbench 5",
+      "process_name": "geekbench 5.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "geekbench 6",
+      "process_name": "geekbench 6.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "geekbench 7",
+      "process_name": "geekbench 7.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "geekbench ai",
+      "process_name": "geekbench ai.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "photoshop",
+      "process_name": "photoshop.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "illustrator",
+      "process_name": "illustrator.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "afterfx",
+      "process_name": "afterfx.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "lightroom",
+      "process_name": "lightroom.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "indesign",
+      "process_name": "indesign.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "premiere pro",
+      "process_name": "premiere pro.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "psexpress",
+      "process_name": "psexpress.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "photodirector",
+      "process_name": "photodirector.exe",
+      "exe_path": "",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": ""
+    },
+    {
+      "app_name": "cinebench",
+      "process_name": "cinebench.exe",
+      "exe_path": "C:\\Users\\Public\\Desktop\\Cinebench\\Cinebench.exe",
+      "shell_target": "",
+      "args": [],
+      "workload_hint": 2,
+      "expected_mode": "optimized_WL2",
+      "enabled": true,
+      "notes": "example: fill in exe_path like this, or use Scan and match"
+    }
+  ],
+  "shortcut_folder": "C:\\Users\\Public\\Desktop\\DTT Test Apps"
+}

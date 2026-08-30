@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>DTT Probe - 抓取 Adaptive Performance Policy 原始資料</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; font: 14px/1.5 "Segoe UI", system-ui, sans-serif; background: #f4f6f8; color: #1c2330; }
+  header { background: #0068b5; color: #fff; padding: 14px 20px; }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 4px 0 0; font-size: 12px; opacity: .85; }
+  main { padding: 16px 20px 40px; max-width: 1100px; }
+  section { background: #fff; border: 1px solid #d9e0e8; border-radius: 6px; padding: 14px 16px; margin-bottom: 14px; }
+  section h2 { margin: 0 0 10px; font-size: 14px; letter-spacing: .02em; text-transform: uppercase; color: #55637a; }
+  button { font: inherit; padding: 6px 14px; border: 1px solid #0068b5; background: #0068b5; color: #fff;
+           border-radius: 4px; cursor: pointer; }
+  button.sec { background: #fff; color: #0068b5; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input[type=text], input[type=number] { font: inherit; padding: 5px 8px; border: 1px solid #c3ccd8; border-radius: 4px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .pill { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .ok   { background: #e2f5e6; color: #16663a; }
+  .bad  { background: #fdeaea; color: #a41d1d; }
+  .warn { background: #fff6dd; color: #7a5c00; }
+  #modules { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow: auto; }
+  #modules button { text-align: left; background: #fff; color: #1c2330; border-color: #c3ccd8; }
+  #modules button.hit { border-color: #0068b5; background: #eaf4fc; font-weight: 600; }
+  pre { background: #10161f; color: #d5dde8; padding: 10px; border-radius: 4px; overflow: auto;
+        max-height: 260px; font: 12px/1.45 Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+  table { border-collapse: collapse; font-size: 13px; width: 100%; }
+  th, td { border: 1px solid #dde3ea; padding: 4px 8px; text-align: left; }
+  th { background: #eef2f6; }
+  .hint { font-size: 12px; color: #5a6675; margin: 6px 0 0; }
+  code { background: #eef2f6; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>DTT Probe</h1>
+  <p>直接連上 <code>ws://localhost:8888/echo</code>，抓取 Adaptive Performance Policy 的原始 XML。不需安裝任何東西，離線可用。</p>
+</header>
+
+<main>
+
+<section>
+  <h2>1 · 連線</h2>
+  <div class="row">
+    <input type="text" id="wsurl" value="ws://localhost:8888/echo" size="34">
+    <button id="btnConnect">連線</button>
+    <span id="connState" class="pill bad">未連線</span>
+  </div>
+  <p class="hint">
+    連不上的話：把這個檔案複製到 DTT 網頁伺服器放 <code>index.html</code> 的同一個資料夾，
+    然後用 <code>http://localhost:8888/dtt_probe.html</code> 開啟（同源，一定連得上）。
+  </p>
+</section>
+
+<section>
+  <h2>2 · 探索模組</h2>
+  <div class="row">
+    <button id="btnDiscover" disabled>列出所有 Group / Module</button>
+    <span id="discState" class="hint"></span>
+  </div>
+  <div id="modules" style="margin-top:10px"></div>
+  <p class="hint">找到 <b>Adaptive Performance Policy</b> 後點它，會自動選為擷取目標（已自動標藍的就是猜到的那個）。</p>
+  <div class="row" style="margin-top:8px">
+    <span class="hint">目前目標：</span><b id="target">（尚未選擇）</b>
+  </div>
+</section>
+
+<section>
+  <h2>3 · 連續擷取</h2>
+  <div class="row">
+    <label class="hint">間隔 (ms) <input type="number" id="interval" value="1000" min="200" step="100" style="width:90px"></label>
+    <button id="btnStart" disabled>開始擷取</button>
+    <button id="btnStop" class="sec" disabled>停止</button>
+    <span id="capState" class="pill warn">閒置</span>
+  </div>
+  <p class="hint">
+    <b>建議操作：</b>按「開始擷取」→ 立刻 Alt-Tab 切到 <b>Cinebench</b>（讓它在最前景）→ 停留約 20 秒 →
+    關掉 Cinebench → 再等 20 秒 → 回到這個頁面按「停止」。<br>
+    只有<b>內容有變化</b>的快照才會被記錄，所以檔案不會很大，而且切換的時間點會一目了然
+    （順便可以量出真正的 debounce 秒數）。
+  </p>
+  <table id="changeTable" style="margin-top:10px">
+    <thead><tr><th style="width:60px">#</th><th style="width:120px">相對時間 (s)</th><th style="width:100px">持續次數</th><th>大小 (bytes)</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section>
+  <h2>4 · 匯出</h2>
+  <div class="row">
+    <button id="btnXslt" class="sec" disabled>順便抓 combined.xsl（選用，但很有用）</button>
+    <button id="btnDownload" disabled>下載擷取結果 .txt</button>
+    <span id="dlState" class="hint"></span>
+  </div>
+  <p class="hint">下載完把 .txt 檔傳回來就可以了。</p>
+</section>
+
+<section>
+  <h2>5 · 手動下指令（進階／備用）</h2>
+  <div class="row">
+    <input type="text" id="cmd" value="dptf ui getgroups" size="52">
+    <button id="btnCmd" class="sec" disabled>送出</button>
+  </div>
+  <pre id="cmdOut">（尚未執行）</pre>
+</section>
+
+<section>
+  <h2>· 執行紀錄</h2>
+  <pre id="log"></pre>
+</section>
+
+</main>
+
+<script>
+"use strict";
+
+var ws = null;
+var nextId = 1;
+var pending = new Map();
+var groups = [];            // [{id, name, modules:[{id,name}]}]
+var target = null;          // {groupId, moduleId, name}
+var snapshots = [];         // [{firstT, lastT, count, xml}]
+var captureStart = 0;
+var timer = null;
+var xsltText = "";
+var rawDiscovery = [];      // 原始回應，一併存進報告
+
+function $(id) { return document.getElementById(id); }
+
+function log(msg) {
+  var el = $("log");
+  el.textContent += "[" + new Date().toLocaleTimeString() + "] " + msg + "\n";
+  el.scrollTop = el.scrollHeight;
+}
+
+function setConn(state, text) {
+  var el = $("connState");
+  el.className = "pill " + state;
+  el.textContent = text;
+}
+
+/* ---------- WebSocket ---------- */
+
+function connect() {
+  var url = $("wsurl").value.trim();
+  try { ws = new WebSocket(url); }
+  catch (e) { log("建立 WebSocket 失敗: " + e.message); return; }
+
+  ws.binaryType = "arraybuffer";
+
+  ws.onopen = function () {
+    setConn("ok", "已連線");
+    $("btnDiscover").disabled = false;
+    $("btnCmd").disabled = false;
+    $("btnXslt").disabled = false;
+    log("已連上 " + url);
+  };
+
+  ws.onclose = function () {
+    setConn("bad", "已斷線");
+    $("btnDiscover").disabled = true;
+    $("btnCmd").disabled = true;
+    $("btnXslt").disabled = true;
+    stopCapture();
+    log("連線關閉");
+  };
+
+  ws.onerror = function () {
+    setConn("bad", "連線錯誤");
+    log("連線錯誤 — 若是用 file:// 開啟，請改放到 DTT 的網頁資料夾用 http://localhost:8888/ 開。");
+  };
+
+  ws.onmessage = function (ev) {
+    if (typeof ev.data === "string") { handleMessage(ev.data); return; }
+    if (ev.data instanceof ArrayBuffer) {
+      handleMessage(new TextDecoder("utf-8").decode(ev.data));
+      return;
+    }
+    if (ev.data instanceof Blob) {
+      var fr = new FileReader();
+      fr.onload = function () { handleMessage(String(fr.result)); };
+      fr.readAsText(ev.data);
+    }
+  };
+}
+
+function handleMessage(data) {
+  var i = data.indexOf(":");
+  if (i <= 0) return;
+  var idStr = data.slice(0, i);
+  var payload = data.slice(i + 1);
+  var id = parseInt(idStr, 10);
+  if (!isNaN(id) && pending.has(id)) {
+    var entry = pending.get(id);
+    pending.delete(id);
+    clearTimeout(entry.timer);
+    entry.resolve(payload);
+  }
+  // idStr 為 "update" / "status" 的推播訊息在此忽略
+}
+
+function send(cmd, timeoutMs) {
+  return new Promise(function (resolve, reject) {
+    if (!ws || ws.readyState !== 1) { reject(new Error("WebSocket 未連線")); return; }
+    var id = nextId++;
+    var t = setTimeout(function () {
+      pending.delete(id);
+      reject(new Error("逾時: " + cmd));
+    }, timeoutMs || 10000);
+    pending.set(id, { resolve: resolve, timer: t });
+    ws.send(id + ":" + cmd);
+  });
+}
+
+/* ---------- XML 通用解析 ---------- */
+/* 不假設欄位名稱：把 root 的每個直接子節點攤平成 key/value，
+   再從中找出像 id 的欄位與像 name 的欄位。原始 XML 一律保留。 */
+
+function parseItems(text) {
+  var items = [];
+  var doc;
+  try { doc = new DOMParser().parseFromString(text, "text/xml"); }
+  catch (e) { return items; }
+  if (!doc || !doc.documentElement) return items;
+  if (doc.getElementsByTagName("parsererror").length) return items;
+
+  var children = doc.documentElement.children;
+  for (var i = 0; i < children.length; i++) {
+    var node = children[i];
+    var map = {};
+    for (var a = 0; a < node.attributes.length; a++) {
+      map[node.attributes[a].name.toLowerCase()] = node.attributes[a].value;
+    }
+    (function walk(el) {
+      for (var c = 0; c < el.children.length; c++) {
+        var ch = el.children[c];
+        if (ch.children.length === 0) {
+          var k = ch.tagName.toLowerCase();
+          if (!(k in map)) map[k] = (ch.textContent || "").trim();
+        } else {
+          walk(ch);
+        }
+      }
+    })(node);
+
+    var keys = Object.keys(map);
+    var idKey = keys.find(function (k) { return k === "id" || /id$/.test(k); });
+    var nameKey = keys.find(function (k) { return /name|label|title|desc/.test(k); });
+
+    items.push({
+      id: idKey ? map[idKey] : String(i),
+      name: nameKey ? map[nameKey] : node.tagName + " #" + i,
+      fields: map
+    });
+  }
+  return items;
+}
+
+/* ---------- 探索 ---------- */
+
+async function discover() {
+  $("btnDiscover").disabled = true;
+  $("discState").textContent = "查詢中…";
+  groups = [];
+  rawDiscovery = [];
+  $("modules").innerHTML = "";
+
+  try {
+    var groupsXml = await send("dptf ui getgroups");
+    rawDiscovery.push({ cmd: "dptf ui getgroups", raw: groupsXml });
+    var gItems = parseItems(groupsXml);
+    log("getgroups 回傳 " + gItems.length + " 個 group");
+
+    if (gItems.length === 0) {
+      // 解析不出來就用已知的 group 編號硬掃
+      gItems = [0, 1, 2, 3, 4, 5, 6].map(function (n) {
+        return { id: String(n), name: "group " + n, fields: {} };
+      });
+      log("無法解析 group 結構，改用 0~6 硬掃。");
+    }
+
+    for (var i = 0; i < gItems.length; i++) {
+      var g = gItems[i];
+      var modsXml;
+      try {
+        modsXml = await send("dptf ui getmodulesingroup " + g.id);
+      } catch (e) {
+        log("group " + g.id + " 查詢失敗: " + e.message);
+        continue;
+      }
+      rawDiscovery.push({ cmd: "dptf ui getmodulesingroup " + g.id, raw: modsXml });
+      var mods = parseItems(modsXml);
+      groups.push({ id: g.id, name: g.name, modules: mods });
+      log("group " + g.id + " (" + g.name + ") → " + mods.length + " 個 module");
+    }
+
+    renderModules();
+    $("discState").textContent = "完成";
+  } catch (e) {
+    $("discState").textContent = "失敗：" + e.message;
+    log("探索失敗: " + e.message);
+  } finally {
+    $("btnDiscover").disabled = false;
+  }
+}
+
+function renderModules() {
+  var box = $("modules");
+  box.innerHTML = "";
+  var autoPicked = false;
+
+  groups.forEach(function (g) {
+    g.modules.forEach(function (m) {
+      var b = document.createElement("button");
+      b.textContent = "group " + g.id + " / module " + m.id + "  —  " + m.name;
+      var looksRight = /adaptive\s*performance/i.test(m.name);
+      if (looksRight) b.className = "hit";
+      b.onclick = function () { pickTarget(g.id, m.id, m.name); };
+      box.appendChild(b);
+      if (looksRight && !autoPicked) { autoPicked = true; pickTarget(g.id, m.id, m.name); }
+    });
+  });
+
+  if (box.children.length === 0) {
+    box.textContent = "沒有解析出任何 module — 請看下方「執行紀錄」與第 5 節手動下指令。";
+  }
+}
+
+function pickTarget(groupId, moduleId, name) {
+  target = { groupId: groupId, moduleId: moduleId, name: name };
+  $("target").textContent = "group " + groupId + " / module " + moduleId + " — " + name;
+  $("btnStart").disabled = false;
+  log("擷取目標設定為：" + name);
+}
+
+/* ---------- 擷取 ---------- */
+
+function startCapture() {
+  if (!target) return;
+  snapshots = [];
+  captureStart = Date.now();
+  $("changeTable").querySelector("tbody").innerHTML = "";
+  $("btnStart").disabled = true;
+  $("btnStop").disabled = false;
+  $("btnDownload").disabled = true;
+  $("capState").className = "pill ok";
+  $("capState").textContent = "擷取中…";
+  log("開始擷取 — 現在請切到要測試的程式");
+  tick();
+  timer = setInterval(tick, Math.max(200, parseInt($("interval").value, 10) || 1000));
+}
+
+function stopCapture() {
+  if (timer) { clearInterval(timer); timer = null; }
+  $("btnStart").disabled = !target;
+  $("btnStop").disabled = true;
+  if (snapshots.length) $("btnDownload").disabled = false;
+  $("capState").className = "pill warn";
+  $("capState").textContent = "已停止（" + snapshots.length + " 個變化）";
+}
+
+async function tick() {
+  if (!target) return;
+  var xml;
+  try {
+    xml = await send("dptf ui getmoduledata " + target.groupId + " " + target.moduleId, 8000);
+  } catch (e) {
+    log("擷取失敗: " + e.message);
+    return;
+  }
+  var now = Date.now();
+  var last = snapshots[snapshots.length - 1];
+  if (last && last.xml === xml) {
+    last.lastT = now;
+    last.count++;
+    updateRow(snapshots.length - 1);
+  } else {
+    snapshots.push({ firstT: now, lastT: now, count: 1, xml: xml });
+    addRow(snapshots.length - 1);
+    log("偵測到內容變化 #" + snapshots.length + " @ +" +
+        ((now - captureStart) / 1000).toFixed(1) + "s");
+  }
+}
+
+function addRow(i) {
+  var tr = document.createElement("tr");
+  tr.id = "snaprow" + i;
+  tr.innerHTML = "<td></td><td></td><td></td><td></td>";
+  $("changeTable").querySelector("tbody").appendChild(tr);
+  updateRow(i);
+}
+
+function updateRow(i) {
+  var s = snapshots[i];
+  var tr = $("snaprow" + i);
+  if (!tr) return;
+  tr.children[0].textContent = i + 1;
+  tr.children[1].textContent = "+" + ((s.firstT - captureStart) / 1000).toFixed(1) +
+                               " → +" + ((s.lastT - captureStart) / 1000).toFixed(1);
+  tr.children[2].textContent = s.count;
+  tr.children[3].textContent = s.xml.length;
+}
+
+/* ---------- XSLT ---------- */
+
+async function fetchXslt() {
+  $("btnXslt").disabled = true;
+  try {
+    xsltText = await send("webserver fetch combined.xsl", 20000);
+    log("已取得 combined.xsl（" + xsltText.length + " bytes）");
+    $("dlState").textContent = "已含 combined.xsl";
+  } catch (e) {
+    log("抓 combined.xsl 失敗: " + e.message);
+  } finally {
+    $("btnXslt").disabled = false;
+  }
+}
+
+/* ---------- 手動指令 ---------- */
+
+async function runCmd() {
+  var cmd = $("cmd").value.trim();
+  if (!cmd) return;
+  $("cmdOut").textContent = "執行中…";
+  try {
+    var out = await send(cmd, 15000);
+    $("cmdOut").textContent = out;
+    rawDiscovery.push({ cmd: cmd, raw: out });
+  } catch (e) {
+    $("cmdOut").textContent = "失敗: " + e.message;
+  }
+}
+
+/* ---------- 匯出 ---------- */
+
+function buildReport() {
+  var out = [];
+  out.push("DTT PROBE REPORT");
+  out.push("generated: " + new Date().toISOString());
+  out.push("ws url    : " + $("wsurl").value.trim());
+  out.push("user agent: " + navigator.userAgent);
+  out.push("target    : " + (target ? "group " + target.groupId + " / module " +
+           target.moduleId + " — " + target.name : "(none)"));
+  out.push("interval  : " + $("interval").value + " ms");
+  out.push("snapshots : " + snapshots.length + " 個相異內容");
+  out.push("");
+
+  out.push("=".repeat(70));
+  out.push("SECTION A — 探索與手動指令的原始回應");
+  out.push("=".repeat(70));
+  rawDiscovery.forEach(function (r) {
+    out.push("");
+    out.push("----- COMMAND: " + r.cmd + " -----");
+    out.push(r.raw);
+  });
+
+  out.push("");
+  out.push("=".repeat(70));
+  out.push("SECTION B — 模組清單");
+  out.push("=".repeat(70));
+  groups.forEach(function (g) {
+    out.push("group " + g.id + " : " + g.name);
+    g.modules.forEach(function (m) {
+      out.push("    module " + m.id + " : " + m.name);
+    });
+  });
+
+  out.push("");
+  out.push("=".repeat(70));
+  out.push("SECTION C — 擷取時間軸（只記錄有變化的快照）");
+  out.push("=".repeat(70));
+  snapshots.forEach(function (s, i) {
+    out.push("");
+    out.push("##### SNAPSHOT " + (i + 1) + "/" + snapshots.length +
+             "  t=+" + ((s.firstT - captureStart) / 1000).toFixed(2) + "s" +
+             "  ~ +" + ((s.lastT - captureStart) / 1000).toFixed(2) + "s" +
+             "  (維持 " + s.count + " 次取樣)  #####");
+    out.push(s.xml);
+  });
+
+  if (xsltText) {
+    out.push("");
+    out.push("=".repeat(70));
+    out.push("SECTION D — combined.xsl");
+    out.push("=".repeat(70));
+    out.push(xsltText);
+  }
+
+  out.push("");
+  out.push("=".repeat(70));
+  out.push("SECTION E — 執行紀錄");
+  out.push("=".repeat(70));
+  out.push($("log").textContent);
+
+  return out.join("\n");
+}
+
+function download() {
+  var blob = new Blob([buildReport()], { type: "text/plain;charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  var stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  a.href = url;
+  a.download = "dtt_probe_" + stamp + ".txt";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+  $("dlState").textContent = "已下載";
+}
+
+/* ---------- 綁定 ---------- */
+
+$("btnConnect").onclick  = connect;
+$("btnDiscover").onclick = discover;
+$("btnStart").onclick    = startCapture;
+$("btnStop").onclick     = stopCapture;
+$("btnXslt").onclick     = fetchXslt;
+$("btnDownload").onclick = download;
+$("btnCmd").onclick      = runCmd;
+$("cmd").addEventListener("keydown", function (e) { if (e.key === "Enter") runCmd(); });
+
+log("就緒。請按「連線」。");
+</script>
+</body>
+</html>
