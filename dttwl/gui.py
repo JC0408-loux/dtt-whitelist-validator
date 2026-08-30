@@ -85,6 +85,7 @@ class ValidatorApp(tk.Tk):
             os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "icon", "DTT_App_Icon.ico"),
             os.path.join(os.path.dirname(__file__), "icon", "DTT_App_Icon.ico"),
             os.path.join(sys.path[0] if getattr(sys, 'frozen', False) else os.path.dirname(__file__), "icon", "DTT_App_Icon.ico"),
+            os.path.join(os.getcwd(), "icon", "DTT_App_Icon.ico"),
         ]
         
         icon_path = None
@@ -95,26 +96,48 @@ class ValidatorApp(tk.Tk):
         
         if icon_path:
             try:
-                # Set icon for both window and taskbar
+                # Set icon for window title bar
                 self.iconbitmap(icon_path, default=True)
-                # Also set as WM_ICON for better taskbar support
+                
+                # Also set as WM_ICON for taskbar support
                 try:
                     self.wm_iconbitmap(icon_path)
                 except Exception:
                     pass
-                # Try to set the icon for the taskbar using ctypes
+                
+                # Enhanced taskbar icon setting using ctypes
                 try:
                     import ctypes
                     from ctypes import wintypes
                     
-                    # Load user32.dll
-                    user32 = ctypes.windll.user32
-                    # Get the window handle
-                    hwnd = self.winfo_id()
-                    # Set the window icon using WM_SETICON
-                    user32.SendMessageW(hwnd, 0x0080, 0, 0)  # WM_SETICON = 0x0080
-                except Exception:
+                    # Define necessary Windows API structures and constants
+                    WM_SETICON = 0x0080
+                    ICON_SMALL = 0
+                    ICON_BIG = 1
+                    
+                    # Load the icon using Windows API
+                    hicon = ctypes.windll.user32.LoadImageW(
+                        None, 
+                        icon_path, 
+                        1,  # IMAGE_ICON
+                        0, 0,  # Use actual icon size
+                        0x00000010  # LR_LOADFROMFILE
+                    )
+                    
+                    if hicon:
+                        # Get the window handle
+                        hwnd = self.winfo_id()
+                        # Set both small and large icons
+                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
+                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
+                        
+                        # Force window redraw to update icon
+                        ctypes.windll.user32.SetForegroundWindow(hwnd)
+                        
+                except Exception as e:
+                    # If ctypes fails, at least we have the basic iconbitmap
                     pass
+                    
             except Exception:
                 # Icon setting failed, continue without it
                 pass
