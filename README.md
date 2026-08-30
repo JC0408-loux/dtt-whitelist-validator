@@ -8,6 +8,8 @@ Checks that launching a whitelisted application actually makes Intel Dynamic
 Tuning switch to the expected action set (`optimized_WL1` / `optimized_WL2`),
 and reports every application that does not.
 
+**Current version:** beta v0.2
+
 ## How it reads DTT
 
 The DTT page at `http://localhost:8888/index.html` is only a shell. It opens a
@@ -41,24 +43,48 @@ change the very state being measured.
 
 ## Install
 
-Two ways to ship it. Neither requires anything to be installed on a test
-machine, and the portable build requires nothing on the build machine either.
+### Pre-built portable release (recommended)
 
-### Portable folder (no Python anywhere)
+The portable release is a self-contained package that includes everything needed
+to run the tool — no Python installation, no internet connection, and no build
+steps required on the test machine.
+
+**Installation steps:**
+
+1. **Download** the portable release ZIP file (e.g., `dtt-wl-validator-beta-v0.2-portable.zip`)
+2. **Unblock** the ZIP file: right-click the .zip → Properties → tick *Unblock* → OK
+3. **Extract** the ZIP file to any location
+4. **Run** `DTT whitelist validator beta v0.2.bat` to launch the application
+
+That's it. The portable folder is approximately 120 MB and fits comfortably on
+a USB stick.
+
+**What's included:**
+- A self-contained Python interpreter with tkinter (for the GUI)
+- All required dependencies (openpyxl for Excel reports)
+- The complete application code
+- Launch scripts for both GUI and command-line use
+
+**Why this approach:**
+- Nothing is installed or registered on the test machine
+- The interpreter runs under the signed python.exe, so Smart App Control does not
+  block it
+- Works offline — no network access required during runtime
+- The entire package is self-contained and can be copied or moved freely
+
+### Building from source
+
+If you need to build the portable release yourself (for development or custom
+modifications), use:
 
 ```
 packaging\make_portable.bat
 ```
 
-Downloads a self-contained CPython, unpacks it beside the application, adds
-openpyxl, writes the launchers, and then verifies the result by actually
-running it. Copy the finished `portable\` folder (or the zip beside it) to the
-test machine and run **DTT Whitelist Validator.bat**. It is roughly 120 MB on
-disk, which fits a USB stick comfortably.
-
-Nothing is installed or registered at any point: the interpreter arrives as a
-plain archive. It also runs under python.exe, which is signed, so Smart App
-Control does not treat it the way it treats an unsigned .exe.
+This script downloads a self-contained CPython, unpacks it beside the application,
+adds openpyxl, writes the launchers, and then verifies the result by actually
+running it. The finished `portable\` folder (or the zip beside it) can be copied
+to the test machine.
 
 The interpreter comes from `python-build-standalone`, because it is the only
 no-install Windows build that carries **tkinter** -- both the NuGet package and
@@ -76,7 +102,7 @@ packaging\make_portable.bat -PythonArchive C:\path\to\cpython-3.11.10.tar.gz
 `-Source standalone|nuget|embeddable` forces one source instead of trying them
 in order.
 
-### Single executable
+### Single executable (alternative)
 
 ```
 packaging\build.bat
@@ -121,6 +147,9 @@ executables at all, and msedge.exe and chrome.exe are themselves on the
 workload-hint list, so a browser-based UI would change the very state being
 measured. The window belongs to a process that is not whitelisted, which also
 makes it the neutral baseline the runner returns to between test cases.
+
+The application uses a custom icon (`icon/DTT_App_Icon.ico`) in the portable
+release, replacing the default tkinter feather icon.
 
 **Test** shows what is happening right now: the application being tested, the
 action set DTT currently reports, and a banner that turns green on a pass and
@@ -347,6 +376,30 @@ captures in `tests/fixtures/`, so the parser, arbitration logic, polling loop,
 shortcut resolution, window and report writer are covered without an Intel
 platform. The window tests skip themselves where tkinter has no display. Only
 the Windows foreground control in `dttwl/winfg.py` needs the real thing.
+
+## Building for Release
+
+For detailed release build instructions, see `packaging/RELEASE.md`. This document
+covers:
+
+- Automated release builds (GitHub Actions)
+- Local release builds (batch and PowerShell scripts)
+- Verification and testing procedures
+- Release checklist and troubleshooting
+
+Quick local build:
+
+```cmd
+cd packaging
+build_release.bat v1.0.0
+```
+
+Or for a simple portable build without versioning:
+
+```cmd
+cd packaging
+make_portable.bat
+```
 
 ## Layout
 

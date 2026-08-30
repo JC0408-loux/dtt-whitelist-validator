@@ -26,8 +26,7 @@ from . import shortcuts as shortcuts_module
 from .esif import EsifError
 from .runner import Detector, PreflightError, RunObserver, Runner, WindowsLauncher
 from .status import StatusParseError, derive_expected_modes
-
-TITLE = "DTT Whitelist Validator"
+from .version import FULL_TITLE as TITLE
 
 COLOR_PASS_BG = "#1f9d55"
 COLOR_FAIL_BG = "#c0392b"
@@ -77,6 +76,15 @@ class ValidatorApp(tk.Tk):
         self.title(TITLE)
         self.geometry("1000x680")
         self.minsize(880, 600)
+        
+        # Set application icon for window and taskbar
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon", "DTT_App_Icon.ico")
+        if os.path.exists(icon_path):
+            try:
+                self.iconbitmap(icon_path, default=True)
+            except Exception:
+                # Icon setting failed, continue without it
+                pass
 
         self.config_path = config_path
         self.settings = self._load_settings()
@@ -332,7 +340,13 @@ class ValidatorApp(tk.Tk):
 
         grid = ttk.LabelFrame(frame, text=" Report ")
         grid.pack(fill="x", padx=6, pady=8)
-        self._field(grid, 0, "Output folder", self.vars["output"])
+        
+        row = ttk.Frame(grid)
+        row.pack(fill="x", padx=8, pady=4)
+        ttk.Label(row, text="Output folder").pack(side="left")
+        ttk.Entry(row, textvariable=self.vars["output"], width=44).pack(side="left", padx=(8, 0))
+        ttk.Button(row, text="Browse...", command=self._browse_output_folder).pack(
+            side="left", padx=(6, 0))
 
         ttk.Button(frame, text="Save settings", command=self._save_settings).pack(
             anchor="e", padx=6, pady=8)
@@ -429,6 +443,11 @@ class ValidatorApp(tk.Tk):
         folder = filedialog.askdirectory(title="Choose the folder holding the shortcuts")
         if folder:
             self.var_folder.set(folder)
+
+    def _browse_output_folder(self):
+        folder = filedialog.askdirectory(title="Choose the report output folder")
+        if folder:
+            self.vars["output"].set(folder)
 
     def _reload_whitelist(self):
         # Tk variables may only be read from the thread running the event loop,

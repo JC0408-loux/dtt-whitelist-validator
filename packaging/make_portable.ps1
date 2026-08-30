@@ -29,6 +29,12 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
+# Version information - should match dttwl/version.py
+$VERSION = "v0.2"
+$VERSION_DISPLAY = "beta v0.2"
+$BAT_FILE_NAME = "DTT whitelist validator $VERSION_DISPLAY.bat"
+$ZIP_FILE_NAME = "dtt-wl-validator-$($VERSION_DISPLAY.Replace(' ', '-'))-portable.zip"
+
 $root = Split-Path -Parent $PSScriptRoot
 $out = if ([System.IO.Path]::IsPathRooted($OutDir)) { $OutDir }
        else { Join-Path $root $OutDir }
@@ -215,6 +221,12 @@ Copy-Item -Force (Join-Path $root "main.py") $appDir
 Copy-Item -Force (Join-Path $root "config.example.json") $appDir
 Copy-Item -Force (Join-Path $root "config.example.json") $out
 Copy-Item -Force (Join-Path $root "README.md") $out
+# Copy icon folder
+$iconDir = Join-Path $root "icon"
+if (Test-Path $iconDir) { 
+    Copy-Item -Recurse -Force $iconDir (Join-Path $appDir "icon")
+    Note "icon files copied"
+}
 $probe = Join-Path $root "tools\dtt_probe.html"
 if (Test-Path $probe) { Copy-Item -Force $probe $out }
 Get-ChildItem -Recurse -Force -Path $appDir -Filter "__pycache__" |
@@ -268,7 +280,22 @@ if errorlevel 1 (
     pause >nul
 )
 '@
-Set-Content -Path (Join-Path $out "DTT Whitelist Validator.bat") -Value $launcher -Encoding ASCII
+Set-Content -Path (Join-Path $out $BAT_FILE_NAME) -Value $launcher -Encoding ASCII
+
+# Create a shortcut with the custom icon for taskbar display
+$iconPath = Join-Path $appDir "icon\DTT_App_Icon.ico"
+if (Test-Path $iconPath) {
+    $wsh = New-Object -ComObject WScript.Shell
+    $shortcut = $wsh.CreateShortcut((Join-Path $out ($BAT_FILE_NAME -replace '\.bat$', '.lnk')))
+    $shortcut.TargetPath = Join-Path $out $BAT_FILE_NAME
+    $shortcut.WorkingDirectory = $out
+    $shortcut.IconLocation = $iconPath
+    $shortcut.Description = "DTT Whitelist Validator"
+    $shortcut.Save()
+    Note "created shortcut with custom icon"
+} else {
+    Warn "icon file not found, skipping shortcut creation"
+}
 
 $console = @'
 @echo off
@@ -284,13 +311,13 @@ pause
 '@
 Set-Content -Path (Join-Path $out "command line.bat") -Value $console -Encoding ASCII
 
-$readme = @'
+$readme = @"
 DTT Whitelist Validator - portable build
 ========================================
 
 Nothing to install. Copy this whole folder to the test machine and run
 
-    DTT Whitelist Validator.bat
+    $BAT_FILE_NAME
 
 The Python runtime is in python\ and the application is in app\. No internet
 access is needed here.
@@ -300,7 +327,7 @@ For the command line (status, watch, run, verify-stub) use
     command line.bat status
 
 README.md has the full documentation.
-'@
+"@
 Set-Content -Path (Join-Path $out "READ ME FIRST.txt") -Value $readme -Encoding ASCII
 Note "launchers written"
 
@@ -349,7 +376,7 @@ else { Warn "openpyxl missing, reports will be CSV only" }
 # ---------------------------------------------------------------------------
 if (-not $NoZip) {
     Step "Packing"
-    $zip = Join-Path $root "dtt-wl-validator-portable.zip"
+    $zip = Join-Path $root $ZIP_FILE_NAME
     if (Test-Path $zip) { Remove-Item -Force $zip }
     Compress-Archive -Path $out -DestinationPath $zip
     Note "$zip"
@@ -358,5 +385,5 @@ if (-not $NoZip) {
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 
 Write-Host "`nDone." -ForegroundColor Green
-Write-Host "Copy this folder to the test machine and run 'DTT Whitelist Validator.bat':"
+Write-Host "Copy this folder to the test machine and run '$BAT_FILE_NAME':"
 Write-Host "  $out"

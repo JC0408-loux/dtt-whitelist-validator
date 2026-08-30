@@ -6,6 +6,8 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import Optional
 
+from .version import REPORT_PREFIX
+
 PASS = "PASS"
 FAIL = "FAIL"
 SKIP = "SKIP"
@@ -277,5 +279,5 @@ def timestamped_paths(output_dir, formats):
     stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     paths = {}
     for fmt in formats:
-        paths[fmt] = os.path.join(output_dir, "dtt_wl_report_{0}.{1}".format(stamp, fmt))
+        paths[fmt] = os.path.join(output_dir, "{0}_{1}.{2}".format(REPORT_PREFIX, stamp, fmt))
     return paths

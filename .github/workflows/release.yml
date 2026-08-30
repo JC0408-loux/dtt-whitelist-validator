@@ -1,0 +1,112 @@
+name: Build and Release Portable Version
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag version to build (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-portable:
+    name: Build Portable Version
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Get version from tag
+        id: get_version
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $version = "${{ github.event.inputs.tag }}"
+          } else {
+            $version = "${{ github.ref_name }}"
+          }
+          echo "version=$version" >> $env:GITHUB_OUTPUT
+          echo "Building version: $version"
+        shell: pwsh
+        
+      - name: Build portable version
+        run: |
+          cd packaging
+          .\make_portable.bat -NoZip:$false
+        shell: cmd
+        
+      - name: Run tests before building
+        run: |
+          python -m unittest discover -s tests -t .
+        shell: pwsh
+        continue-on-error: false
+        
+      - name: Check build output
+        run: |
+          if (-not (Test-Path "portable")) {
+            throw "portable folder not found"
+          }
+          if (-not (Test-Path "dtt-wl-validator-portable.zip")) {
+            throw "dtt-wl-validator-portable.zip not found"
+          }
+          $size = (Get-Item "dtt-wl-validator-portable.zip").Length / 1MB
+          Write-Host "Portable zip size: $([math]::Round($size, 2)) MB"
+        shell: pwsh
+        
+      - name: Create release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.version }}
+          release_name: DTT Whitelist Validator ${{ steps.get_version.outputs.version }}
+          body: |
+            ## Portable Version
+            
+            This release includes a pre-built portable version that requires no installation.
+            
+            ### Installation
+            1. Download `dtt-wl-validator-portable.zip`
+            2. Right-click the zip file → Properties → Unblock → OK
+            3. Extract the zip file
+            4. Run `DTT Whitelist Validator.bat`
+            
+            ### Requirements
+            - Windows 10 or later
+            - Intel Dynamic Tuning Technology (DTT) installed
+            - No Python installation required
+            - No internet connection required on the test machine
+            
+            ### What's Included
+            - Self-contained Python 3.11.10 runtime (includes tkinter)
+            - DTT Whitelist Validator application
+            - openpyxl for Excel report generation
+            - Command-line launcher
+            
+            See [README.md](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/README.md) for full documentation.
+          draft: false
+          prerelease: false
+          
+      - name: Upload portable zip
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./dtt-wl-validator-portable.zip
+          asset_name: dtt-wl-validator-portable-${{ steps.get_version.outputs.version }}.zip
+          asset_content_type: application/zip
+          
+      - name: Upload portable folder (for manual inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: portable-folder-${{ steps.get_version.outputs.version }}
+          path: portable/
+          retention-days: 30

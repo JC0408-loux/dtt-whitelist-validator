@@ -212,7 +212,10 @@ Supporting material:
 - `tools/dtt_probe.html` — a browser page that talks to the same WebSocket.
   This is how the protocol in section 2 was reverse-engineered; use it again if
   a future DTT version changes something.
-- `packaging/make_portable.ps1` — builds a no-install folder.
+- `packaging/make_portable.bat` — builds a no-install folder for distribution.
+  The pre-built portable release is the recommended way to ship the tool to
+  test machines. Users simply download, unblock, extract, and run — no Python
+  installation or build steps required.
 - `docs/*.png` — screenshots of the window.
 
 ---
@@ -354,7 +357,7 @@ status is stated honestly.
 5. **Window icon, glyphs, filtering.**
    A real `.ico` (the default tkinter feather is currently shipping); a ✓/✕
    column so pass/fail does not depend on colour alone; a filter for
-   All / Failures only / Tested only.
+   All / Failures only / Tested only. *Icon implemented in `icon/DTT_App_Icon.ico`.*
 
 6. **Convenience.**
    Re-run failures only; show live DTT state on the strip when idle; remember
@@ -369,7 +372,7 @@ status is stated honestly.
 | Speak the WebSocket protocol directly, not Selenium | no WebDriver to version-match, nothing to download on an offline machine, and no browser that could steal the foreground. The DTT page's own rendering is irrelevant — the XML has everything. |
 | A native window, not a local web UI | a browser page cannot launch executables at all, and the browsers are on the whitelist. The window's process is not whitelisted, which also makes it the neutral baseline. |
 | tkinter | in the standard library, so the portable build needs nothing extra. |
-| `python-build-standalone` for the portable build | the only no-install Windows CPython that ships **tkinter**. The NuGet package and python.org's embeddable package both omit it, and a build without it fails only on the test machine — so `make_portable.ps1` verifies `import tkinter` before declaring success. |
+| `python-build-standalone` for the portable build | the only no-install Windows CPython that ships **tkinter**. The NuGet package and python.org's embeddable package both omit it, and a build without it fails only on the test machine — so `make_portable.bat` verifies `import tkinter` before declaring success. The pre-built portable release is distributed as a ZIP that users simply unblock, extract, and run — no Python installation or build steps required on test machines. |
 | One-file PyInstaller build | stub mode copies the executable under another name, which only works if it is self-contained. |
 | Stub mode gated behind `verify-stub` | it rests on DTT matching by filename. If that were wrong, every stub result would be a silent false failure. |
 | Poll from `t0` instead of sleeping for the debounce | avoids reading mid-switch, and yields the real switch latency as a by-product. |
