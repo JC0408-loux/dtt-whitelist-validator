@@ -230,11 +230,20 @@ Supporting material:
 ## 6. How to verify a change
 
 ```
+python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -t .
 ```
 
-**76 tests.** They must all pass before you claim anything is done. Configure
+**105 tests.** They must all pass before you claim anything is done. Configure
 this as the repository's test command so it runs automatically.
+
+The tool itself has no third-party runtime dependency — test machines are
+offline — but the tests do: `websockets`, because `tests/mock_dtt.py` serves a
+real WebSocket endpoint rather than stubbing the handshake, and `openpyxl`,
+because the report tests cover the .xlsx path. Without them two test modules
+fail to import and the suite silently shrinks to 29 tests while still looking
+like it ran. `.github/workflows/tests.yml` runs the full suite with tkinter and
+Xvfb on every push, so the GUI tests execute instead of skipping themselves.
 
 ### The tests are the only ground truth available off-hardware
 

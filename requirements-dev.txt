@@ -1,0 +1,14 @@
+# Needed to RUN THE TESTS only. The tool itself ships no third-party runtime
+# dependency beyond the optional openpyxl, because test machines are offline
+# (AGENTS.md section 3).
+#
+#   python -m pip install -r requirements-dev.txt
+#   python -m unittest discover -s tests -t .
+
+# tests/mock_dtt.py serves a real WebSocket endpoint, so the client under test
+# performs a genuine RFC 6455 handshake rather than a stubbed one.
+websockets>=12.0
+
+# Only optional at runtime - a portable build without it writes CSV only - but
+# the report tests cover the .xlsx path, so it is required here.
+openpyxl>=3.1

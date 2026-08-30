@@ -207,6 +207,40 @@ class PackagedArtifactTests(unittest.TestCase):
         self.assertNotIn("actions/create-release", workflow)
         self.assertNotIn("actions/upload-release-asset", workflow)
 
+    def test_both_workflows_install_the_test_dependencies(self):
+        # Without them tests/mock_dtt.py fails to import, two whole modules
+        # disappear, and the run still reports a tidy pass on what is left.
+        required = _read("requirements-dev.txt")
+        self.assertIn("websockets", required)
+        self.assertIn("openpyxl", required)
+        for workflow in ("release.yml", "tests.yml"):
+            content = _read(".github", "workflows", workflow)
+            self.assertIn("requirements-dev.txt", content, workflow)
+
+    def test_every_third_party_test_import_is_declared(self):
+        # A new import in tests/ that nobody lists here passes locally and
+        # fails on a clean runner, which is how tests.yml first went red.
+        declared = _read("requirements-dev.txt").lower()
+        stdlib = set(sys.stdlib_module_names)
+        local = {"dttwl", "tests"}
+        tests_dir = os.path.join(ROOT, "tests")
+        for name in sorted(os.listdir(tests_dir)):
+            if not name.endswith(".py"):
+                continue
+            for line in _read("tests", name).splitlines():
+                line = line.strip()
+                if line.startswith("import "):
+                    module = line[len("import "):].split()[0].split(".")[0]
+                elif line.startswith("from "):
+                    module = line[len("from "):].split()[0].split(".")[0]
+                else:
+                    continue
+                if module in stdlib or module in local or not module:
+                    continue
+                self.assertIn(module.lower(), declared,
+                              "{0} imports {1}, which requirements-dev.txt "
+                              "does not list".format(name, module))
+
     def test_ci_never_invokes_a_script_that_pauses(self):
         # make_portable.bat ends in `pause`; a runner has nobody to press a key.
         workflow = _workflow_directives()

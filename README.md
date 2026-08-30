@@ -371,6 +371,7 @@ See `config.example.json`.
 ## Development
 
 ```
+python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -t .
 ```
 
