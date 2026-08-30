@@ -58,6 +58,16 @@ trap { Fail $_.Exception.Message }
 function Step($text) { Write-Host "`n=== $text ===" -ForegroundColor Cyan }
 function Note($text) { Write-Host "    $text" }
 function Warn($text) { Write-Host "    $text" -ForegroundColor Yellow }
+function Success($text) { Write-Host "`n=== $text ===" -ForegroundColor Green }
+
+function Show-Progress {
+    param(
+        [string]$Activity,
+        [string]$Status,
+        [int]$PercentComplete
+    )
+    Write-Progress -Activity $Activity -Status $Status -PercentComplete $PercentComplete
+}
 
 function Invoke-Native {
     <#
@@ -109,7 +119,8 @@ function Expand-Any($archive, $destination) {
 # kept as fallbacks for command-line use, and the verification below says so
 # rather than handing over a build that only fails on the test machine.
 
-Step "Fetching Python"
+Step "Fetching Python (1/6)"
+Show-Progress -Activity "Building Portable Version" -Status "Fetching Python interpreter..." -PercentComplete 10
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 
 $standaloneBuilds = @(
@@ -183,6 +194,7 @@ The build that includes tkinter (the window needs it) is:
 }
 
 $extracted = Join-Path $work "python-extracted"
+Show-Progress -Activity "Building Portable Version" -Status "Extracting Python interpreter..." -PercentComplete 30
 Expand-Any $archive $extracted
 
 $sourceDir = if ($chosen.Sub) { Join-Path $extracted $chosen.Sub } else { $extracted }
@@ -190,7 +202,8 @@ if (-not (Test-Path $sourceDir)) {
     Fail "The archive did not contain '$($chosen.Sub)'. Pass -PythonArchiveSubdir with the folder inside it that holds python.exe."
 }
 
-Step "Assembling $out"
+Step "Assembling $out (2/6)"
+Show-Progress -Activity "Building Portable Version" -Status "Assembling portable folder..." -PercentComplete 40
 if (Test-Path $out) { Remove-Item -Recurse -Force $out }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 Copy-Item -Recurse -Force $sourceDir $pythonDir
@@ -214,7 +227,8 @@ if ($pth) {
 # ---------------------------------------------------------------------------
 # 2. copy the application
 # ---------------------------------------------------------------------------
-Step "Copying the application"
+Step "Copying the application (3/6)"
+Show-Progress -Activity "Building Portable Version" -Status "Copying application files..." -PercentComplete 50
 New-Item -ItemType Directory -Force -Path $appDir | Out-Null
 Copy-Item -Recurse -Force (Join-Path $root "dttwl") $appDir
 Copy-Item -Force (Join-Path $root "main.py") $appDir
@@ -239,7 +253,8 @@ Note "app files copied"
 if ($SkipExcel) {
     Warn "skipping openpyxl; reports will be CSV only"
 } else {
-    Step "Adding openpyxl (for the .xlsx report)"
+    Step "Adding openpyxl (for the .xlsx report) (4/6)"
+    Show-Progress -Activity "Building Portable Version" -Status "Installing openpyxl for Excel reports..." -PercentComplete 60
     $sitePackages = Join-Path $pythonDir "Lib\site-packages"
     New-Item -ItemType Directory -Force -Path $sitePackages | Out-Null
     try {
@@ -263,7 +278,8 @@ if ($SkipExcel) {
 # ---------------------------------------------------------------------------
 # 4. launchers
 # ---------------------------------------------------------------------------
-Step "Writing launchers"
+Step "Writing launchers (5/6)"
+Show-Progress -Activity "Building Portable Version" -Status "Creating launchers and shortcuts..." -PercentComplete 80
 
 $launcher = @'
 @echo off
@@ -334,7 +350,8 @@ Note "launchers written"
 # ---------------------------------------------------------------------------
 # 5. verify before claiming success
 # ---------------------------------------------------------------------------
-Step "Verifying the build"
+Step "Verifying the build (6/6)"
+Show-Progress -Activity "Building Portable Version" -Status "Verifying build integrity..." -PercentComplete 90
 
 $version = Invoke-Native $pythonExe @("-c", "import sys; print(sys.version.split()[0])")
 if ($version.ExitCode -ne 0) { throw "the bundled python.exe does not run:`n$($version.Output)" }
@@ -384,6 +401,7 @@ if (-not $NoZip) {
 
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 
-Write-Host "`nDone." -ForegroundColor Green
+Show-Progress -Activity "Building Portable Version" -Status "Build completed successfully!" -PercentComplete 100
+Success "Success!"
 Write-Host "Copy this folder to the test machine and run '$BAT_FILE_NAME':"
 Write-Host "  $out"
