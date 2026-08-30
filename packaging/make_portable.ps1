@@ -29,13 +29,21 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-# Version information - should match dttwl/version.py
-$VERSION = "v0.2"
-$VERSION_DISPLAY = "beta v0.2"
+$root = Split-Path -Parent $PSScriptRoot
+
+# Read the version out of dttwl/version.py rather than repeating it. A comment
+# asking the next person to keep two files in sync is not a mechanism - it is
+# how the workflow came to look for a zip the build had stopped producing.
+# This script runs before any interpreter exists, so the file is parsed rather
+# than imported; failing loudly beats building a mislabelled zip.
+$versionSource = Get-Content (Join-Path $root "dttwl\version.py") -Raw
+if ($versionSource -match 'VERSION\s*=\s*"([^"]+)"') { $VERSION = $Matches[1] }
+else { throw "could not read VERSION from dttwl/version.py" }
+if ($versionSource -match 'VERSION_DISPLAY\s*=\s*"([^"]+)"') { $VERSION_DISPLAY = $Matches[1] }
+else { throw "could not read VERSION_DISPLAY from dttwl/version.py" }
+
 $BAT_FILE_NAME = "DTT whitelist validator $VERSION_DISPLAY.bat"
 $ZIP_FILE_NAME = "dtt-wl-validator-$($VERSION_DISPLAY.Replace(' ', '-'))-portable.zip"
-
-$root = Split-Path -Parent $PSScriptRoot
 $out = if ([System.IO.Path]::IsPathRooted($OutDir)) { $OutDir }
        else { Join-Path $root $OutDir }
 $pythonDir = Join-Path $out "python"

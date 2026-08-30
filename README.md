@@ -8,7 +8,7 @@ Checks that launching a whitelisted application actually makes Intel Dynamic
 Tuning switch to the expected action set (`optimized_WL1` / `optimized_WL2`),
 and reports every application that does not.
 
-**Current version:** beta v0.2
+**Current version:** beta v0.2.1
 
 ## How it reads DTT
 
@@ -51,10 +51,10 @@ steps required on the test machine.
 
 **Installation steps:**
 
-1. **Download** the portable release ZIP file (e.g., `dtt-wl-validator-beta-v0.2-portable.zip`)
+1. **Download** the portable release ZIP file (e.g., `dtt-wl-validator-beta-v0.2.1-portable.zip`)
 2. **Unblock** the ZIP file: right-click the .zip → Properties → tick *Unblock* → OK
 3. **Extract** the ZIP file to any location
-4. **Run** `DTT whitelist validator beta v0.2.bat` to launch the application
+4. **Run** `DTT whitelist validator beta v0.2.1.bat` to launch the application
 
 That's it. The portable folder is approximately 120 MB and fits comfortably on
 a USB stick.

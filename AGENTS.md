@@ -234,7 +234,7 @@ python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -t .
 ```
 
-**105 tests.** They must all pass before you claim anything is done. Configure
+**107 tests.** They must all pass before you claim anything is done. Configure
 this as the repository's test command so it runs automatically.
 
 The tool itself has no third-party runtime dependency — test machines are

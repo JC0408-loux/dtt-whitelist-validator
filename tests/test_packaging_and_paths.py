@@ -179,6 +179,23 @@ class PackagedArtifactTests(unittest.TestCase):
         self.assertIn("datas=[(ICON", spec)
         self.assertIn("icon=ICON", spec)
 
+    def test_the_portable_build_reads_the_version_instead_of_repeating_it(self):
+        # It used to carry its own copy under a comment saying "should match
+        # dttwl/version.py". A comment is not a mechanism; the build would have
+        # produced a zip labelled with the previous release.
+        script = _read("packaging", "make_portable.ps1")
+        self.assertIn("dttwl\\version.py", script)
+        self.assertNotIn('$VERSION = "v', script)
+        self.assertNotIn('$VERSION_DISPLAY = "', script)
+
+    def test_the_readme_names_the_current_artifacts(self):
+        # A tester follows these names literally; a stale one sends them
+        # looking for a file the release does not contain.
+        readme = _read("README.md")
+        self.assertIn(version.VERSION_DISPLAY, readme)
+        self.assertIn(version.ZIP_FILE_NAME, readme)
+        self.assertIn(version.BAT_FILE_NAME, readme)
+
     def test_the_portable_build_ships_the_icon(self):
         self.assertIn("DTT_App_Icon.ico", _read("packaging", "make_portable.ps1"))
 
