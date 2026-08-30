@@ -15,13 +15,14 @@ import os
 import queue
 import threading
 import traceback
-import sys
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from . import appicon
 from . import config as config_module
 from . import diagnose as diagnose_module
+from . import paths as paths_module
 from . import report as report_module
 from . import shortcuts as shortcuts_module
 from .esif import EsifError
@@ -73,74 +74,15 @@ class GuiObserver(RunObserver):
 
 class ValidatorApp(tk.Tk):
     def __init__(self, config_path="config.json"):
+        # Has to happen before the window exists, or the taskbar button is
+        # already filed under the host interpreter and keeps Python's icon.
+        appicon.set_app_user_model_id()
+
         super().__init__()
         self.title(TITLE)
         self.geometry("1000x680")
         self.minsize(880, 600)
-        
-        # Set application icon for window and taskbar
-        # Try multiple possible icon locations
-        icon_paths = [
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon", "DTT_App_Icon.ico"),
-            os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "icon", "DTT_App_Icon.ico"),
-            os.path.join(os.path.dirname(__file__), "icon", "DTT_App_Icon.ico"),
-            os.path.join(sys.path[0] if getattr(sys, 'frozen', False) else os.path.dirname(__file__), "icon", "DTT_App_Icon.ico"),
-            os.path.join(os.getcwd(), "icon", "DTT_App_Icon.ico"),
-        ]
-        
-        icon_path = None
-        for path in icon_paths:
-            if os.path.exists(path):
-                icon_path = path
-                break
-        
-        if icon_path:
-            try:
-                # Set icon for window title bar
-                self.iconbitmap(icon_path, default=True)
-                
-                # Also set as WM_ICON for taskbar support
-                try:
-                    self.wm_iconbitmap(icon_path)
-                except Exception:
-                    pass
-                
-                # Enhanced taskbar icon setting using ctypes
-                try:
-                    import ctypes
-                    from ctypes import wintypes
-                    
-                    # Define necessary Windows API structures and constants
-                    WM_SETICON = 0x0080
-                    ICON_SMALL = 0
-                    ICON_BIG = 1
-                    
-                    # Load the icon using Windows API
-                    hicon = ctypes.windll.user32.LoadImageW(
-                        None, 
-                        icon_path, 
-                        1,  # IMAGE_ICON
-                        0, 0,  # Use actual icon size
-                        0x00000010  # LR_LOADFROMFILE
-                    )
-                    
-                    if hicon:
-                        # Get the window handle
-                        hwnd = self.winfo_id()
-                        # Set both small and large icons
-                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, hicon)
-                        ctypes.windll.user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, hicon)
-                        
-                        # Force window redraw to update icon
-                        ctypes.windll.user32.SetForegroundWindow(hwnd)
-                        
-                except Exception as e:
-                    # If ctypes fails, at least we have the basic iconbitmap
-                    pass
-                    
-            except Exception:
-                # Icon setting failed, continue without it
-                pass
+        appicon.apply_window_icon(self)
 
         self.config_path = config_path
         self.settings = self._load_settings()
@@ -354,7 +296,8 @@ class ValidatorApp(tk.Tk):
             "poll": tk.StringVar(value=str(timing["poll_interval_seconds"])),
             "samples": tk.StringVar(value=str(timing["stable_read_samples"])),
             "timeout": tk.StringVar(value=str(timing["detect_timeout_seconds"])),
-            "output": tk.StringVar(value=str(self.settings.get("report", {}).get("output_dir", "C:\\Users\\Public\\Documents\\DTT whitelist validation report"))),
+            "output": tk.StringVar(value=str(self.settings.get("report", {}).get(
+                "output_dir", paths_module.default_report_dir()))),
         }
 
         grid = ttk.LabelFrame(frame, text=" DTT connection ")
@@ -468,7 +411,8 @@ class ValidatorApp(tk.Tk):
             },
             "run": {"rounds": int(self.vars["rounds"].get()),
                     "mode": self.vars["mode"].get()},
-            "report": {"output_dir": self.vars["output"].get().strip() or "C:\\Users\\Public\\Documents\\DTT whitelist validation report"},
+            "report": {"output_dir": self.vars["output"].get().strip()
+                       or paths_module.default_report_dir()},
             "expected_mode_by_hint": self._hint_overrides(),
             "shortcut_folder": self.var_folder.get().strip(),
             "apps": self.apps,
@@ -869,7 +813,8 @@ class ValidatorApp(tk.Tk):
     def _export(self):
         if not self.rows:
             return
-        output_dir = self.vars["output"].get().strip() or "C:\\Users\\Public\\Documents\\DTT whitelist validation report"
+        output_dir = (self.vars["output"].get().strip()
+                      or paths_module.default_report_dir())
         paths = report_module.timestamped_paths(output_dir, ["csv", "xlsx"])
 
         written = [report_module.write_simple_csv(self.rows, paths["csv"])]

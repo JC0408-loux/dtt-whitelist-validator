@@ -322,7 +322,10 @@ first, and `run --mode stub` refuses to continue if the check fails.
 
 ## Report
 
-Three files land in `reports\`:
+Three files land in the report folder -- by default
+`Documents\DTT Whitelist Validation Reports`, changeable on the Settings
+tab. It is the signed-in user's Documents, not Public, so two engineers
+sharing a test machine do not mix their runs:
 
 `dtt_wl_report_<timestamp>.csv` is the summary, one line per application:
 
@@ -377,28 +380,17 @@ shortcut resolution, window and report writer are covered without an Intel
 platform. The window tests skip themselves where tkinter has no display. Only
 the Windows foreground control in `dttwl/winfg.py` needs the real thing.
 
-## Building for Release
+## Building for release
 
-For detailed release build instructions, see `packaging/RELEASE.md`. This document
-covers:
+Tagging a commit `v<something>` builds the portable zip on a Windows runner and
+attaches it to the release automatically -- see `.github/workflows/release.yml`.
+`packaging/RELEASE.md` has the checklist and the manual fallback.
 
-- Automated release builds (GitHub Actions)
-- Local release builds (batch and PowerShell scripts)
-- Verification and testing procedures
-- Release checklist and troubleshooting
-
-Quick local build:
+To build the same zip locally, double-click `Build Portable Version.bat` in the
+repository root, or:
 
 ```cmd
-cd packaging
-build_release.bat v1.0.0
-```
-
-Or for a simple portable build without versioning:
-
-```cmd
-cd packaging
-make_portable.bat
+packaging\make_portable.bat
 ```
 
 ## Layout

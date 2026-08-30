@@ -1,0 +1,24 @@
+name: Tests
+
+# Runs on every push and pull request so a regression is caught in the branch
+# rather than at release time.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The runner's own python3 is used rather than actions/setup-python:
+      # the GUI tests need tkinter, and python3-tk installs it for the system
+      # interpreter only. Without a display and tkinter the GUI tests skip
+      # themselves, which would quietly hide a broken window.
+      - name: Install tkinter and a virtual display
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
+
+      - name: Run the suite
+        run: xvfb-run -a python3 -m unittest discover -s tests -t . -v

@@ -2,14 +2,15 @@ name: Build and Release Portable Version
 
 on:
   push:
+    # Two-part tags are used here (v0.2, v1.0), so a 'v*.*.*' pattern would
+    # never match. 'v*' covers both shapes.
     tags:
-      - 'v*.*.*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag version to build (e.g., v1.0.0)'
+        description: 'Tag to build (e.g. v0.2)'
         required: true
-        default: 'v1.0.0'
 
 permissions:
   contents: write
@@ -18,95 +19,96 @@ jobs:
   build-portable:
     name: Build Portable Version
     runs-on: windows-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
-      - name: Get version from tag
-        id: get_version
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Before the build, so a broken commit never spends ten minutes
+      # downloading an interpreter first.
+      - name: Run tests
+        run: python -m unittest discover -s tests -t .
+        shell: pwsh
+
+      - name: Resolve version and artifact name
+        id: names
+        shell: pwsh
         run: |
           if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             $version = "${{ github.event.inputs.tag }}"
           } else {
             $version = "${{ github.ref_name }}"
           }
-          echo "version=$version" >> $env:GITHUB_OUTPUT
-          echo "Building version: $version"
-        shell: pwsh
-        
+          # The zip name is built by version.py; asking Python for it keeps
+          # this workflow from drifting out of sync with the build script.
+          $zip = python -c "from dttwl.version import ZIP_FILE_NAME; print(ZIP_FILE_NAME)"
+          $bat = python -c "from dttwl.version import BAT_FILE_NAME; print(BAT_FILE_NAME)"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "zip=$zip"         >> $env:GITHUB_OUTPUT
+          "bat=$bat"         >> $env:GITHUB_OUTPUT
+          Write-Host "Building $version -> $zip"
+
+      # The .ps1 directly, not make_portable.bat: the .bat ends in `pause`,
+      # which has no place in a non-interactive runner.
       - name: Build portable version
-        run: |
-          cd packaging
-          .\make_portable.bat -NoZip:$false
-        shell: cmd
-        
-      - name: Run tests before building
-        run: |
-          python -m unittest discover -s tests -t .
         shell: pwsh
-        continue-on-error: false
-        
+        run: .\packaging\make_portable.ps1
+
       - name: Check build output
-        run: |
-          if (-not (Test-Path "portable")) {
-            throw "portable folder not found"
-          }
-          if (-not (Test-Path "dtt-wl-validator-portable.zip")) {
-            throw "dtt-wl-validator-portable.zip not found"
-          }
-          $size = (Get-Item "dtt-wl-validator-portable.zip").Length / 1MB
-          Write-Host "Portable zip size: $([math]::Round($size, 2)) MB"
         shell: pwsh
-        
-      - name: Create release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if (-not (Test-Path "portable")) { throw "portable folder not found" }
+          $zip = "${{ steps.names.outputs.zip }}"
+          if (-not (Test-Path $zip)) { throw "$zip not found" }
+          $size = (Get-Item $zip).Length / 1MB
+          Write-Host "Portable zip: $zip ($([math]::Round($size, 2)) MB)"
+
+      # softprops/action-gh-release creates the release or updates an existing
+      # one and uploads the asset in a single step. The archived
+      # actions/create-release@v1 fails outright when the release already
+      # exists, which is exactly what happens when a tag is cut in the web UI.
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.get_version.outputs.version }}
-          release_name: DTT Whitelist Validator ${{ steps.get_version.outputs.version }}
+          tag_name: ${{ steps.names.outputs.version }}
+          name: DTT Whitelist Validator ${{ steps.names.outputs.version }}
+          files: ${{ steps.names.outputs.zip }}
           body: |
-            ## Portable Version
-            
-            This release includes a pre-built portable version that requires no installation.
-            
-            ### Installation
-            1. Download `dtt-wl-validator-portable.zip`
-            2. Right-click the zip file → Properties → Unblock → OK
-            3. Extract the zip file
-            4. Run `DTT Whitelist Validator.bat`
-            
-            ### Requirements
+            ## Portable version — no installation, no internet needed
+
+            ### Install
+            1. Download `${{ steps.names.outputs.zip }}`
+            2. **Right-click the zip → Properties → Unblock → OK** (required on
+               every machine; without it Windows blocks the extracted files)
+            3. Extract it
+            4. Run `${{ steps.names.outputs.bat }}`
+
+            ### Requirements on the test machine
             - Windows 10 or later
-            - Intel Dynamic Tuning Technology (DTT) installed
-            - No Python installation required
-            - No internet connection required on the test machine
-            
-            ### What's Included
-            - Self-contained Python 3.11.10 runtime (includes tkinter)
-            - DTT Whitelist Validator application
-            - openpyxl for Excel report generation
-            - Command-line launcher
-            
-            See [README.md](https://github.com/${{ github.repository }}/blob/${{ steps.get_version.outputs.version }}/README.md) for full documentation.
-          draft: false
-          prerelease: false
-          
-      - name: Upload portable zip
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./dtt-wl-validator-portable.zip
-          asset_name: dtt-wl-validator-portable-${{ steps.get_version.outputs.version }}.zip
-          asset_content_type: application/zip
-          
-      - name: Upload portable folder (for manual inspection)
+            - Intel Dynamic Tuning Technology installed and reachable on
+              `localhost:8888`
+            - No Python installation and no internet connection
+
+            ### Included
+            - Self-contained CPython 3.11 runtime with tkinter
+            - openpyxl, for the .xlsx report
+            - A command-line launcher
+
+            Reports are written to `Documents\DTT Whitelist Validation Reports`
+            by default; the folder is configurable on the Settings tab.
+
+            See [README.md](https://github.com/${{ github.repository }}/blob/${{ steps.names.outputs.version }}/README.md),
+            and [AGENTS.md](https://github.com/${{ github.repository }}/blob/${{ steps.names.outputs.version }}/AGENTS.md)
+            before changing the code.
+
+      - name: Upload portable folder for inspection
         uses: actions/upload-artifact@v4
         with:
-          name: portable-folder-${{ steps.get_version.outputs.version }}
+          name: portable-folder-${{ steps.names.outputs.version }}
           path: portable/
           retention-days: 30

@@ -5,6 +5,5 @@ dist/
 reports/
 config.json
 dtt_wl_validator.zip
-dtt-wl-validator-portable.zip
-dtt-wl-validator-portable-*.zip
+dtt-wl-validator-*.zip
 portable/

@@ -204,8 +204,11 @@ main.py -> dttwl/cli.py -> gui.py (default)  or  a subcommand
 | `diagnose.py` | 300 | layered connection checks |
 | `config.py` | 198 | defaults, validation, generation from the live tables |
 | `report.py` | 242 | summary and detail reports |
-| `gui.py` | 707 | the tkinter window |
+| `gui.py` | 856 | the tkinter window |
 | `cli.py` | 286 | command line |
+| `appicon.py` | 121 | **Windows-specific behaviour** — taskbar identity and window icon |
+| `paths.py` | 74 | where reports go by default (the user's Documents) |
+| `version.py` | 17 | one source for the version, window title, and artifact names |
 
 Supporting material:
 
@@ -217,6 +220,10 @@ Supporting material:
   test machines. Users simply download, unblock, extract, and run — no Python
   installation or build steps required.
 - `docs/*.png` — screenshots of the window.
+- `docs/v0.2-review.md` — a post-mortem of the v0.2 release: two features that
+  shipped without working, a CI workflow that never fired, and a release tagged
+  off the wrong commit. Every one of them passed a green test run. Read it
+  before you trust a passing suite as evidence about a change you just made.
 
 ---
 
@@ -250,6 +257,8 @@ real hardware.
 | --- | --- |
 | `winfg.py` | needs the real Win32 foreground APIs |
 | `stub.py` | needs a real process and window |
+| `appicon.py` | the taskbar button only exists on a real Windows desktop. The tests check *where the code looks* and that it never grabs the foreground; whether the icon actually appears is a hardware question |
+| `paths.py` | the Windows branch resolves a redirected Documents folder (OneDrive, a network home drive). Off Windows only the fallback runs |
 | `packaging/*` | produces and runs a Windows executable |
 | a real DTT connection | the mock is a simulation, not the firmware |
 
@@ -355,9 +364,10 @@ status is stated honestly.
    guesswork.
 
 5. **Window icon, glyphs, filtering.**
-   A real `.ico` (the default tkinter feather is currently shipping); a ✓/✕
-   column so pass/fail does not depend on colour alone; a filter for
-   All / Failures only / Tested only. *Icon implemented in `icon/DTT_App_Icon.ico`.*
+   Icon done: `icon/DTT_App_Icon.ico`, applied by `appicon.py` and bundled by
+   both builds. *Still needs a hardware test — see the checklist in
+   `packaging/RELEASE.md`.* Remaining: a ✓/✕ column so pass/fail does not
+   depend on colour alone, and a filter for All / Failures only / Tested only.
 
 6. **Convenience.**
    Re-run failures only; show live DTT state on the strip when idle; remember
@@ -374,6 +384,10 @@ status is stated honestly.
 | tkinter | in the standard library, so the portable build needs nothing extra. |
 | `python-build-standalone` for the portable build | the only no-install Windows CPython that ships **tkinter**. The NuGet package and python.org's embeddable package both omit it, and a build without it fails only on the test machine — so `make_portable.bat` verifies `import tkinter` before declaring success. The pre-built portable release is distributed as a ZIP that users simply unblock, extract, and run — no Python installation or build steps required on test machines. |
 | One-file PyInstaller build | stub mode copies the executable under another name, which only works if it is self-contained. |
+| An AppUserModelID for the taskbar icon | Windows draws a taskbar button from the *process's* identity, not the window's. Without one, everything launched through `python.exe` — which the portable build always is — is grouped under Python and drawn with Python's icon. `iconbitmap` reaches only the title bar, and a `.lnk` carrying the icon decorates the shortcut, not the running process. |
+| Reports default to the user's Documents, not Public | test machines are shared. A folder under `Public\Documents` mixes two engineers' runs together, and some sites deny writes to it by policy — which would surface as a permission error on the first export, long after the run that produced the data. |
+| The Documents path is asked for, not assembled | on managed machines Documents is redirected to OneDrive or a network drive. `%USERPROFILE%\Documents` then names a folder Explorer no longer shows the tester. |
+| The report file name carries no version | reports from several releases share one folder and are read as a set; a prefix that changes each release breaks sorting and any glob a tester writes. Version belongs in the report's metadata (task 3). |
 | Stub mode gated behind `verify-stub` | it rests on DTT matching by filename. If that were wrong, every stub result would be a silent false failure. |
 | Poll from `t0` instead of sleeping for the debounce | avoids reading mid-switch, and yields the real switch latency as a by-product. |
 | Derive action set names from the platform | see section 2. |

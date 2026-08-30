@@ -4,6 +4,8 @@ import copy
 import json
 import os
 
+from .paths import default_report_dir
+
 DEFAULTS = {
     "dtt": {
         "host": "localhost",
@@ -61,7 +63,7 @@ DEFAULTS = {
     ],
     "search_max_depth": 4,
     "report": {
-        "output_dir": "C:\\Users\\Public\\Documents\\DTT whitelist validation report",
+        "output_dir": default_report_dir(),
         "formats": ["csv", "xlsx"],
     },
     "apps": [],
@@ -105,6 +107,10 @@ def load(path):
 
     config = _merge(DEFAULTS, raw)
     config["apps"] = [_merge(APP_DEFAULTS, app) for app in config.get("apps", [])]
+    # An explicit "" means "use the default folder", not "write to the working
+    # directory" - so a shared config file need not name one machine's profile.
+    if not str(config["report"].get("output_dir", "")).strip():
+        config["report"]["output_dir"] = default_report_dir()
     validate(config)
     return config
 
