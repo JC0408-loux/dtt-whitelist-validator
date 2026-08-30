@@ -15,6 +15,7 @@ import os
 import queue
 import threading
 import traceback
+import sys
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -83,6 +84,7 @@ class ValidatorApp(tk.Tk):
             os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon", "DTT_App_Icon.ico"),
             os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "icon", "DTT_App_Icon.ico"),
             os.path.join(os.path.dirname(__file__), "icon", "DTT_App_Icon.ico"),
+            os.path.join(sys.path[0] if getattr(sys, 'frozen', False) else os.path.dirname(__file__), "icon", "DTT_App_Icon.ico"),
         ]
         
         icon_path = None
@@ -98,6 +100,19 @@ class ValidatorApp(tk.Tk):
                 # Also set as WM_ICON for better taskbar support
                 try:
                     self.wm_iconbitmap(icon_path)
+                except Exception:
+                    pass
+                # Try to set the icon for the taskbar using ctypes
+                try:
+                    import ctypes
+                    from ctypes import wintypes
+                    
+                    # Load user32.dll
+                    user32 = ctypes.windll.user32
+                    # Get the window handle
+                    hwnd = self.winfo_id()
+                    # Set the window icon using WM_SETICON
+                    user32.SendMessageW(hwnd, 0x0080, 0, 0)  # WM_SETICON = 0x0080
                 except Exception:
                     pass
             except Exception:
@@ -316,7 +331,7 @@ class ValidatorApp(tk.Tk):
             "poll": tk.StringVar(value=str(timing["poll_interval_seconds"])),
             "samples": tk.StringVar(value=str(timing["stable_read_samples"])),
             "timeout": tk.StringVar(value=str(timing["detect_timeout_seconds"])),
-            "output": tk.StringVar(value=str(self.settings["report"]["output_dir"] or os.path.expanduser("%USERPROFILE%\\Documents\\DTT whitelist validation report"))),
+            "output": tk.StringVar(value=str(self.settings["report"]["output_dir"] or "C:\\Users\\Public\\Documents\\DTT whitelist validation report")),
         }
 
         grid = ttk.LabelFrame(frame, text=" DTT connection ")
@@ -831,7 +846,7 @@ class ValidatorApp(tk.Tk):
     def _export(self):
         if not self.rows:
             return
-        output_dir = self.vars["output"].get().strip() or os.path.expanduser("%USERPROFILE%\\Documents\\DTT whitelist validation report")
+        output_dir = self.vars["output"].get().strip() or "C:\\Users\\Public\\Documents\\DTT whitelist validation report"
         paths = report_module.timestamped_paths(output_dir, ["csv", "xlsx"])
 
         written = [report_module.write_simple_csv(self.rows, paths["csv"])]
