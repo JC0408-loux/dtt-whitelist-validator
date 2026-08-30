@@ -255,7 +255,7 @@ python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -t .
 ```
 
-**126 tests.** They must all pass before you claim anything is done. Configure
+**127 tests.** They must all pass before you claim anything is done. Configure
 this as the repository's test command so it runs automatically.
 
 The tool itself has no third-party runtime dependency — test machines are
@@ -280,6 +280,33 @@ in `tests/fixtures/`:
 Any change to parsing, arbitration or name derivation must be checked against
 all three. Do not edit a fixture to make a test pass — they are recordings of
 real hardware.
+
+### Look at the window, do not only run the suite
+
+```
+sudo apt-get install -y python3-tk xvfb        # once
+xvfb-run -a python tools/run_gui_headless.py   # the real window, no Windows, no DTT
+```
+
+The tool has exactly **one** Windows-dependent seam — `WindowsLauncher`.
+Everything else is platform-neutral, so replacing that one object runs the
+whole application, the tkinter UI included, on any machine. `tests/mock_dtt.py`
+provides the stand-ins, and none of them is a stub returning canned answers:
+
+| | |
+| --- | --- |
+| `MockDttServer` | opens a real TCP socket and speaks real WebSocket, so `wsclient.py` performs a genuine RFC 6455 handshake against it |
+| `DttSimulator` | loads the real status XML captured from a test machine and **recomputes** the Workload-dependent minterms when the foreground changes, so it behaves like DTT rather than like a recording |
+| `FakeLauncher` | replaces `WindowsLauncher`, with a configurable hint debounce and switches for "fails to launch" and "never reaches the foreground" |
+
+`--capture DIR` drives a whole sweep and writes a screenshot per step, which is
+how the SOP deck was built.
+
+**Use this before claiming a UI or configuration change works.** A green suite
+says the covered paths still behave; it says nothing about what the window
+shows. The v0.2 report folder defaulted to `C:\Users\Public\Documents` and
+shipped with the suite green — one look at the Settings tab would have caught
+it in seconds.
 
 ### What cannot be verified without a Windows machine and live DTT
 

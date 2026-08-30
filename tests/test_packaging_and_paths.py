@@ -280,6 +280,15 @@ class PackagedArtifactTests(unittest.TestCase):
             {"Build Portable Version.bat",  # friendly build entry point
              "run_from_source.bat"})        # Smart App Control fallback
 
+    def test_the_headless_gui_tool_is_present_and_documented(self):
+        # It is the only way to look at the window off Windows, and it is worth
+        # nothing if nobody knows it exists - which is exactly why the v0.2
+        # report path shipped with a green suite.
+        self.assertTrue(os.path.isfile(
+            os.path.join(ROOT, "tools", "run_gui_headless.py")))
+        for parts in (("AGENTS.md",), ("README.md",)):
+            self.assertIn("tools/run_gui_headless.py", _read(*parts), parts)
+
     def test_the_docs_do_not_point_at_deleted_scripts(self):
         for parts in (("README.md",), ("AGENTS.md",), ("packaging", "RELEASE.md")):
             self.assertNotIn("build_release", _read(*parts), parts)

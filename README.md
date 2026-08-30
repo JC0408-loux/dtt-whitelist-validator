@@ -383,6 +383,13 @@ python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -t .
 ```
 
+To see the window itself without Windows or DTT — the mock server drives the
+real application, and `--capture` writes a screenshot per step:
+
+```
+xvfb-run -a python tools/run_gui_headless.py
+```
+
 The tests run the whole pipeline against a simulated DTT server built from real
 captures in `tests/fixtures/`, so the parser, arbitration logic, polling loop,
 shortcut resolution, window and report writer are covered without an Intel
