@@ -224,8 +224,23 @@ class LaunchedApp:
         return [pid for pid in self.pids if pid not in self.pre_existing]
 
     def target_pids(self):
-        """Which processes to look for a window in, and to close."""
-        return self.owned_pids() or []
+        """Which processes to look for a window in.
+
+        Normally the processes this launch created. But a single-instance
+        application - VS Code, Outlook, Word, a browser - hands the request to
+        the copy already running and exits, leaving nothing owned. The window
+        that has to come forward then belongs to a process that existed before
+        the test started, and returning an empty list here means no window is
+        ever found: the case times out after 30s with no verdict. That is what
+        happened to code.exe when VS Code was already open.
+
+        Falling back to every process of this name is also what DTT matches
+        on - the executable name - so the state being measured is the real one.
+
+        Closing still uses owned_pids(), so an instance that was already open
+        is never shut down.
+        """
+        return self.owned_pids() or list(self.pids)
 
 
 def launch(exe_path=None, shell_target=None, args=None, process_name=None,

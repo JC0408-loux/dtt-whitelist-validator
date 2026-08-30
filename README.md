@@ -340,6 +340,14 @@ Rounds collapse into one line, and a single failing round makes the whole
 application `fail` -- the action set shown is the one from that failing round,
 so the table says what actually went wrong.
 
+A fourth verdict, `error`, means the tool tried and could not get an answer:
+the launch failed, or the window never came to the front. It is kept separate
+from `skip` (which means the application is not installed here, and is normal)
+because otherwise a real problem hides among dozens of unremarkable rows. It is
+kept separate from `fail` because `fail` claims DTT was given the foreground
+and did not switch -- and if the window never came forward, DTT was never
+asked. A run containing errors never reports `ALL PASS`.
+
 `dtt_wl_details_<timestamp>.csv` keeps every test case: expected and detected
 action set, switch and de-assert latency, workload hint, power source,
 temperature, the applied `PL1MAX`/`PL1MIN`, and the failure reason.

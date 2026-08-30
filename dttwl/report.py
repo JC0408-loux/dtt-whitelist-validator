@@ -131,7 +131,8 @@ def write_xlsx(rows, path):
     for entry in simple_rows(rows):
         results.append([entry["number"], entry["application"],
                         entry["apat_result"], entry["verdict"]])
-        row_fill = {"pass": pass_fill, "fail": fail_fill}.get(entry["verdict"])
+        row_fill = {"pass": pass_fill, "fail": fail_fill,
+                    "error": fills[ERROR]}.get(entry["verdict"])
         if row_fill is not None:
             for cell in results[results.max_row]:
                 cell.fill = row_fill
@@ -200,13 +201,19 @@ def summarize(rows):
         entries = grouped[key]
         passed = sum(1 for r in entries if r.result == PASS)
         failed = sum(1 for r in entries if r.result == FAIL)
-        other = sum(1 for r in entries if r.result in (SKIP, ERROR))
-        if failed == 0 and passed:
-            verdict = "PASS"
-        elif passed == 0 and failed:
-            verdict = "FAIL"
-        elif failed and passed:
+        errored = sum(1 for r in entries if r.result == ERROR)
+        other = errored + sum(1 for r in entries if r.result == SKIP)
+        if failed and passed:
             verdict = "INTERMITTENT"
+        elif failed:
+            verdict = "FAIL"
+        elif passed:
+            verdict = "PASS"
+        elif errored:
+            # The case was attempted and could not be carried out: the window
+            # never came forward, the launch died. That is not "not tested" -
+            # nothing was learned, and somebody has to look at it.
+            verdict = "ERROR"
         else:
             verdict = "NOT TESTED"
         summary.append({
@@ -216,6 +223,7 @@ def summarize(rows):
             "rounds": len(entries),
             "passed": passed,
             "failed": failed,
+            "errored": errored,
             "other": other,
             "verdict": verdict,
         })
@@ -242,15 +250,21 @@ def simple_rows(rows):
     for number, key in enumerate(order, start=1):
         entries = grouped[key]
         failures = [r for r in entries if r.result == FAIL]
-        skipped = [r for r in entries if r.result in (SKIP, ERROR)]
+        passes = [r for r in entries if r.result == PASS]
+        errors = [r for r in entries if r.result == ERROR]
 
         if failures:
             representative, verdict = failures[0], "fail"
-        elif len(skipped) == len(entries):
-            representative, verdict = entries[0], "skip"
+        elif passes:
+            representative, verdict = passes[0], "pass"
+        elif errors:
+            # Distinct from "skip" on purpose. "Skip" means the case was never
+            # attempted - no path configured - and is unremarkable in a list of
+            # thirty. An error means the tool tried and could not get an
+            # answer, which reads identically once both are called "skip".
+            representative, verdict = errors[0], "error"
         else:
-            representative = next(r for r in entries if r.result == PASS)
-            verdict = "pass"
+            representative, verdict = entries[0], "skip"
 
         output.append({
             "number": number,

@@ -389,6 +389,90 @@ class SimpleReportTests(unittest.TestCase):
         self.assertEqual(entry["verdict"], "skip")
         self.assertEqual(entry["apat_result"], "not installed")
 
+    def test_an_error_is_not_reported_as_a_skip(self):
+        # "skip" means the case was never attempted - no path configured - and
+        # is unremarkable in a list of thirty. An error means the tool tried
+        # and got no answer. Calling both "skip" is what buried code.exe
+        # failing to reach the foreground among nine benign rows.
+        from dttwl.report import simple_rows
+
+        rows = [self._row("code.exe", ERROR,
+                          reason="code.exe never reached the foreground within 30s")]
+        entry = simple_rows(rows)[0]
+        self.assertEqual(entry["verdict"], "error")
+        self.assertEqual(entry["apat_result"],
+                         "code.exe never reached the foreground within 30s")
+
+    def test_an_error_is_not_reported_as_a_failure_either(self):
+        # "fail" asserts that DTT was given the foreground and did not switch.
+        # If the window never came forward, APAT was never asked, so a failure
+        # verdict would state an observation that was never made - and send a
+        # tester to the DTT team with nothing to find.
+        from dttwl.report import simple_rows
+
+        rows = [self._row("code.exe", ERROR, reason="never reached the foreground")]
+        self.assertNotEqual(simple_rows(rows)[0]["verdict"], "fail")
+
+    def test_a_real_failure_still_outranks_an_error(self):
+        from dttwl.report import simple_rows
+
+        rows = [
+            self._row("code.exe", ERROR, reason="never reached the foreground"),
+            self._row("code.exe", FAIL, "optimized"),
+        ]
+        self.assertEqual(simple_rows(rows)[0]["verdict"], "fail")
+
+    def test_a_passing_round_outranks_an_error(self):
+        from dttwl.report import simple_rows
+
+        rows = [
+            self._row("code.exe", ERROR, reason="never reached the foreground"),
+            self._row("code.exe", PASS, "optimized_WL1"),
+        ]
+        entry = simple_rows(rows)[0]
+        self.assertEqual(entry["verdict"], "pass")
+        self.assertEqual(entry["apat_result"], "optimized_WL1")
+
+
+class RunSummaryTests(unittest.TestCase):
+    """An application the run could not answer for must not look answered."""
+
+    @staticmethod
+    def _row(process_name, result, reason=""):
+        from dttwl.report import ResultRow
+
+        return ResultRow(app_name=process_name.split(".")[0],
+                         process_name=process_name, result=result, reason=reason)
+
+    def test_an_errored_application_is_not_not_tested(self):
+        from dttwl.report import summarize
+
+        rows = [self._row("code.exe", ERROR, "never reached the foreground")]
+        line = summarize(rows)[0]
+        self.assertEqual(line["verdict"], "ERROR")
+        self.assertEqual(line["errored"], 1)
+
+    def test_a_configured_but_unlaunchable_app_differs_from_an_unconfigured_one(self):
+        from dttwl.report import summarize
+
+        summary = {line["process_name"]: line["verdict"] for line in summarize([
+            self._row("code.exe", ERROR, "never reached the foreground"),
+            self._row("olk.exe", SKIP, "no exe_path configured"),
+        ])}
+        self.assertEqual(summary["code.exe"], "ERROR")
+        self.assertEqual(summary["olk.exe"], "NOT TESTED")
+
+    def test_errors_are_counted_apart_from_skips(self):
+        from dttwl.report import summarize
+
+        rows = [
+            self._row("code.exe", ERROR, "never reached the foreground"),
+            self._row("code.exe", SKIP, "no exe_path configured"),
+        ]
+        line = summarize(rows)[0]
+        self.assertEqual(line["errored"], 1)
+        self.assertEqual(line["other"], 2)
+
 
 class StubPlanTests(unittest.TestCase):
     """Where the renamed interpreter goes, for each way the tool is shipped."""
@@ -752,12 +836,27 @@ class LaunchOwnershipTests(unittest.TestCase):
         self.assertEqual(launched.owned_pids(), [300])
         self.assertEqual(launched.target_pids(), [300])
 
-    def test_joining_an_existing_instance_owns_nothing(self):
+    def test_joining_an_existing_instance_owns_nothing_to_close(self):
         # Edge started while Edge was already running: no new process appears,
         # so there is nothing this test may close.
         launched = self._app(pre_existing={100, 200}, running=[100, 200])
         self.assertEqual(launched.owned_pids(), [])
-        self.assertEqual(launched.target_pids(), [])
+
+    def test_a_single_instance_app_is_still_foregrounded(self):
+        # This assertion used to read target_pids() == [], which is precisely
+        # the bug: VS Code, Outlook and Word hand the launch to the copy
+        # already running and exit, so nothing is owned and no window was ever
+        # looked for - the case timed out after 30s with no verdict.
+        # The window to bring forward belongs to a pre-existing process, and
+        # the executable name is what DTT matches on anyway.
+        launched = self._app(pre_existing={100, 200}, running=[100, 200])
+        self.assertEqual(sorted(launched.target_pids()), [100, 200])
+
+    def test_owning_a_process_still_wins_over_the_pre_existing_ones(self):
+        # When the launch did create its own process, that is the one to
+        # foreground - not somebody's older window of the same application.
+        launched = self._app(pre_existing={100, 200}, running=[100, 200, 300])
+        self.assertEqual(launched.target_pids(), [300])
 
 
 AC_DC = os.path.join(FIXTURES, "status_ac_dc_named.xml")

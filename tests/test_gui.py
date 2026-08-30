@@ -221,6 +221,42 @@ class GuiTests(unittest.TestCase):
         self.assertNotIn("cinebench", self.app.lbl_app["text"])
         self.assertIn("1 failed", self.app.lbl_mode["text"])
 
+    def test_an_errored_application_never_shows_as_all_pass(self):
+        # The banner is the one thing a tester reads before shipping a result.
+        # An application the run could not get a verdict for used to be folded
+        # in with "no exe_path configured" and the banner still said ALL PASS,
+        # which claims an answer the run never obtained.
+        from dttwl.report import ERROR, ResultRow
+
+        rows = [ResultRow(app_name="code", process_name="code.exe",
+                          result=ERROR,
+                          reason="code.exe never reached the foreground within 30s")]
+        self.app._show_final(rows)
+        self.app.update_idletasks()
+
+        self.assertNotEqual(self.app.banner["bg"], self.gui_module.COLOR_PASS_BG)
+        self.assertEqual(self.app.banner["bg"], self.gui_module.COLOR_ERROR_BG)
+        self.assertNotIn("ALL PASS", self.app.banner["text"])
+        self.assertIn("code.exe", self.app.lbl_phase["text"])
+
+    def test_an_error_row_is_visually_distinct_from_a_skip(self):
+        from dttwl.report import ERROR, SKIP, ResultRow
+
+        self.app._append_result(ResultRow(
+            process_name="olk.exe", result=SKIP, reason="no exe_path configured"))
+        self.app._append_result(ResultRow(
+            process_name="code.exe", result=ERROR,
+            reason="code.exe never reached the foreground within 30s"))
+        self.app.update_idletasks()
+
+        children = self.app.results.get_children()
+        skip_row = self.app.results.item(children[-2])
+        error_row = self.app.results.item(children[-1])
+
+        self.assertEqual(skip_row["values"][3], "skip")
+        self.assertEqual(error_row["values"][3], "error")
+        self.assertNotEqual(error_row["tags"], skip_row["tags"])
+
     def test_stop_ends_the_run_and_keeps_partial_results(self):
         self.load_whitelist()
         folder = self.shortcut_folder({

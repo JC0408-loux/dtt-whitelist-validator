@@ -47,8 +47,25 @@ One test case therefore does:
 `detect_timeout_seconds`. **It fails** when it is not — and the failure reason
 is read out of DTT's own conditions table, never guessed.
 
-`SKIP` is not a failure: it means the application is not installed on this
-machine. This is normal and common — a test machine will never have all 34.
+There are four outcomes, and the difference between the last two matters:
+
+| | Means |
+| --- | --- |
+| `PASS` | the expected action set was observed, stably, in time |
+| `FAIL` | the application held the foreground and DTT did **not** switch |
+| `SKIP` | the case was never attempted — the application is not installed here. Normal and common; a test machine will never have all 34 |
+| `ERROR` | the case *was* attempted and produced no answer — the launch failed, or the window never came forward |
+
+`ERROR` is deliberately neither `SKIP` nor `FAIL`. Calling it `SKIP` hides it
+among the dozens of legitimately-absent applications, which is how a `code.exe`
+that never reached the foreground went unnoticed in a run of 35. Calling it
+`FAIL` is worse: `FAIL` asserts that DTT was given the foreground and did not
+switch, and if the window never came forward then APAT was never asked. That
+verdict would send a tester to the DTT team with nothing to find.
+
+The rule: **the tool never reports a conclusion it did not observe.** When it
+could not get an answer it says so, loudly, and the run summary refuses to
+read `ALL PASS`.
 
 ---
 
@@ -234,7 +251,7 @@ python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -t .
 ```
 
-**107 tests.** They must all pass before you claim anything is done. Configure
+**118 tests.** They must all pass before you claim anything is done. Configure
 this as the repository's test command so it runs automatically.
 
 The tool itself has no third-party runtime dependency — test machines are
@@ -353,7 +370,12 @@ status is stated honestly.
    triggers re-learning rather than an abort. Then `verify-stub` runs to a real
    verdict. *Needs a hardware test.*
 
-2. **Treat foreground loss as INVALID, not FAIL.**
+2. **Treat foreground loss as INVALID, not FAIL.**  *(partly done)*
+   The `ERROR` outcome now exists and is reported distinctly, and a
+   single-instance application that hands the launch to a running copy is
+   foregrounded rather than timing out (`winfg.target_pids`). What remains is
+   the mid-measurement case below: retrying, rather than recording, when the
+   foreground is lost part-way through.
    The foreground is already known (`winfg.foreground_process_name`). During
    the measurement window, if the foreground is not the application under test,
    record `INVALID — foreground changed to <name>` and retry the case instead

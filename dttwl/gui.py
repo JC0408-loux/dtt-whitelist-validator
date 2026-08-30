@@ -38,6 +38,10 @@ COLOR_RUN_BG = "#0076CE"
 COLOR_PASS_ROW = "#d7f2e0"
 COLOR_FAIL_ROW = "#ffd9d9"
 COLOR_SKIP_ROW = "#ededed"
+# Amber, not red: an error is "the tool could not get an answer", which is a
+# different claim from "DTT did not switch".
+COLOR_ERROR_BG = "#b7791f"
+COLOR_ERROR_ROW = "#ffeccc"
 
 
 CONNECTION_HINT = (
@@ -195,6 +199,7 @@ class ValidatorApp(tk.Tk):
         self.results.tag_configure("pass", background=COLOR_PASS_ROW)
         self.results.tag_configure("fail", background=COLOR_FAIL_ROW)
         self.results.tag_configure("skip", background=COLOR_SKIP_ROW)
+        self.results.tag_configure("error", background=COLOR_ERROR_ROW)
 
         scroll = ttk.Scrollbar(frame, orient="vertical", command=self.results.yview)
         self.results.configure(yscrollcommand=scroll.set)
@@ -761,8 +766,9 @@ class ValidatorApp(tk.Tk):
             widget.configure(bg=colour)
 
     def _append_result(self, row):
-        verdict = {"PASS": "pass", "FAIL": "fail"}.get(row.result, "skip")
-        tag = verdict if verdict in ("pass", "fail") else "skip"
+        verdict = {"PASS": "pass", "FAIL": "fail",
+                   "ERROR": "error"}.get(row.result, "skip")
+        tag = verdict
         number = len(self.results.get_children()) + 1
         self.results.insert("", "end", values=(
             number, row.process_name, row.detected_mode or "-", verdict,
@@ -771,8 +777,8 @@ class ValidatorApp(tk.Tk):
         ), tags=(tag,))
         self.results.see(self.results.get_children()[-1])
 
-        colour = COLOR_PASS_BG if verdict == "pass" else (
-            COLOR_FAIL_BG if verdict == "fail" else COLOR_IDLE_BG)
+        colour = {"pass": COLOR_PASS_BG, "fail": COLOR_FAIL_BG,
+                  "error": COLOR_ERROR_BG}.get(verdict, COLOR_IDLE_BG)
         self.banner.configure(text=verdict.upper(), bg=colour)
         self.live_frame.configure(bg=colour)
         for widget in (self.lbl_app, self.lbl_mode, self.lbl_phase):
@@ -782,14 +788,24 @@ class ValidatorApp(tk.Tk):
         summary = report_module.summarize(rows)
         failing = [line for line in summary
                    if line["verdict"] in ("FAIL", "INTERMITTENT")]
+        errored = [line for line in summary if line["verdict"] == "ERROR"]
         tested = [line for line in summary if line["verdict"] != "NOT TESTED"]
         self.progress.configure(value=self.progress["maximum"])
 
+        # A failure outranks an error, but an error must never be swallowed by
+        # a green banner: the run did not answer the question for those
+        # applications, and saying "ALL PASS" would claim that it did.
         if failing:
             self.banner.configure(text="{0} FAILED".format(len(failing)),
                                   bg=COLOR_FAIL_BG)
             self.lbl_phase.configure(text="failed: " + ", ".join(
                 line["process_name"] for line in failing))
+        elif errored:
+            self.banner.configure(
+                text="{0} NOT ANSWERED".format(len(errored)), bg=COLOR_ERROR_BG)
+            self.lbl_phase.configure(
+                text="no verdict for: " + ", ".join(
+                    line["process_name"] for line in errored))
         else:
             self.banner.configure(text="ALL PASS", bg=COLOR_PASS_BG)
             self.lbl_phase.configure(text="every application tested passed")
