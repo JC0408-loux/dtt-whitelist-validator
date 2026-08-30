@@ -205,9 +205,12 @@ class LaunchedApp:
     def __init__(self, process_name, popen=None, pre_existing=None):
         self.process_name = process_name.lower()
         self.popen = popen
-        # Processes of this name that were already running: the test must not
-        # foreground them and must never close them. Closing an Edge that was
-        # already open would take the DTT page down with it.
+        # Processes of this name that were already running. They must never be
+        # closed - closing an Edge that was already open would take the DTT
+        # page down with it - and their presence also disables the force-kill
+        # entirely, because a helper this launch created may belong to their
+        # process tree. Their windows may still be brought to the foreground:
+        # see foreground_candidates.
         self.pre_existing = set(pre_existing or ())
         self.pids = []
         self.hwnd = None
@@ -223,24 +226,32 @@ class LaunchedApp:
         """The processes this launch is responsible for."""
         return [pid for pid in self.pids if pid not in self.pre_existing]
 
-    def target_pids(self):
-        """Which processes to look for a window in.
+    def foreground_candidates(self):
+        """Sets of PIDs to look for a window in, most specific first.
 
-        Normally the processes this launch created. But a single-instance
-        application - VS Code, Outlook, Word, a browser - hands the request to
-        the copy already running and exits, leaving nothing owned. The window
-        that has to come forward then belongs to a process that existed before
-        the test started, and returning an empty list here means no window is
-        ever found: the case times out after 30s with no verdict. That is what
-        happened to code.exe when VS Code was already open.
+        Owning a process is not the same as owning a window. A multi-process
+        application - anything built on Electron, and the browsers - serves a
+        new window from the instance that is already running and spawns helper
+        processes that own no window at all. The launch therefore *does* own
+        processes, none of which has anything to bring forward, while the
+        window that must reach the foreground belongs to a process that existed
+        before the test started.
 
-        Falling back to every process of this name is also what DTT matches
-        on - the executable name - so the state being measured is the real one.
+        So: try the processes this launch created, and if none of them has a
+        visible top-level window, try every process of this name. That is also
+        what DTT matches on - the executable name - so the state being measured
+        is the one the platform actually sees.
 
-        Closing still uses owned_pids(), so an instance that was already open
-        is never shut down.
+        Closing never widens like this; see close_app.
         """
-        return self.owned_pids() or list(self.pids)
+        owned = self.owned_pids()
+        if owned:
+            yield owned
+        yield list(self.pids)
+
+    def joined_existing_instance(self):
+        """True when this application was already running before the launch."""
+        return bool(self.pre_existing)
 
 
 def launch(exe_path=None, shell_target=None, args=None, process_name=None,
@@ -298,13 +309,12 @@ def wait_for_foreground(app, timeout=30.0, poll=0.25):
 
     while time.monotonic() < deadline:
         app.refresh_pids()
-        pids = app.target_pids()
-        windows = top_level_windows(pids) if pids else []
-        for hwnd in windows:
-            if force_foreground(hwnd):
-                app.hwnd = hwnd
-                if foreground_process_name() == app.process_name:
-                    return time.monotonic()
+        for pids in app.foreground_candidates():
+            for hwnd in top_level_windows(pids):
+                if force_foreground(hwnd):
+                    app.hwnd = hwnd
+                    if foreground_process_name() == app.process_name:
+                        return time.monotonic()
         time.sleep(poll)
 
     raise LauncherError(
@@ -339,6 +349,19 @@ def close_app(app, grace_seconds=5.0):
         time.sleep(0.25)
 
     app.refresh_pids()
+    if app.joined_existing_instance():
+        # The application was already open before the test. The processes this
+        # launch added are helpers inside that instance - Electron and the
+        # browsers spawn one per window - and `taskkill /T` walks the process
+        # tree, so killing a helper takes the user's session with it. That is
+        # what put "The window terminated unexpectedly (reason: 'killed')" on
+        # a tester's screen and lost the VS Code they were working in.
+        #
+        # A stray helper process is recoverable; somebody's editor is not.
+        return ("left running: {0} was already open before the test, so the "
+                "processes this launch added were not force-closed"
+                .format(app.process_name))
+
     for pid in app.owned_pids():
         subprocess.run(
             ["taskkill", "/PID", str(pid), "/T", "/F"],

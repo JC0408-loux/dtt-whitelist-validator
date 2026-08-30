@@ -834,7 +834,6 @@ class LaunchOwnershipTests(unittest.TestCase):
     def test_processes_that_were_already_running_are_not_owned(self):
         launched = self._app(pre_existing={100, 200}, running=[100, 200, 300])
         self.assertEqual(launched.owned_pids(), [300])
-        self.assertEqual(launched.target_pids(), [300])
 
     def test_joining_an_existing_instance_owns_nothing_to_close(self):
         # Edge started while Edge was already running: no new process appears,
@@ -842,21 +841,58 @@ class LaunchOwnershipTests(unittest.TestCase):
         launched = self._app(pre_existing={100, 200}, running=[100, 200])
         self.assertEqual(launched.owned_pids(), [])
 
-    def test_a_single_instance_app_is_still_foregrounded(self):
-        # This assertion used to read target_pids() == [], which is precisely
-        # the bug: VS Code, Outlook and Word hand the launch to the copy
-        # already running and exit, so nothing is owned and no window was ever
-        # looked for - the case timed out after 30s with no verdict.
-        # The window to bring forward belongs to a pre-existing process, and
-        # the executable name is what DTT matches on anyway.
-        launched = self._app(pre_existing={100, 200}, running=[100, 200])
-        self.assertEqual(sorted(launched.target_pids()), [100, 200])
-
-    def test_owning_a_process_still_wins_over_the_pre_existing_ones(self):
-        # When the launch did create its own process, that is the one to
-        # foreground - not somebody's older window of the same application.
+    def test_the_processes_this_launch_created_are_searched_first(self):
         launched = self._app(pre_existing={100, 200}, running=[100, 200, 300])
-        self.assertEqual(launched.target_pids(), [300])
+        self.assertEqual(next(iter(launched.foreground_candidates())), [300])
+
+    def test_the_search_widens_when_no_owned_process_has_a_window(self):
+        # Owning a process is not owning a window. Electron - VS Code - serves
+        # the new window from the instance already running and spawns helpers
+        # that own no window at all, so the launch owns processes with nothing
+        # to bring forward. Restricting the search to them is what timed
+        # code.exe out after 30s with no verdict.
+        launched = self._app(pre_existing={100, 200}, running=[100, 200, 300])
+        candidates = list(launched.foreground_candidates())
+        self.assertEqual(candidates[0], [300])
+        self.assertEqual(sorted(candidates[-1]), [100, 200, 300])
+
+    def test_a_launch_that_owns_nothing_still_looks_for_a_window(self):
+        launched = self._app(pre_existing={100, 200}, running=[100, 200])
+        candidates = list(launched.foreground_candidates())
+        self.assertEqual(sorted(candidates[-1]), [100, 200])
+
+
+class CloseSafetyTests(unittest.TestCase):
+    """Never tear down an application the tester was already using."""
+
+    def _app(self, pre_existing, running):
+        from dttwl.winfg import LaunchedApp
+
+        launched = LaunchedApp("code.exe", pre_existing=pre_existing)
+        launched.pids = list(running)
+        return launched
+
+    def test_an_app_that_was_already_open_is_never_force_killed(self):
+        # `taskkill /T` walks the process tree, so killing an Electron helper
+        # this launch created takes the whole instance with it. That put "The
+        # window terminated unexpectedly (reason: 'killed')" on a tester's
+        # screen and lost the VS Code they were working in.
+        launched = self._app(pre_existing={100}, running=[100, 300])
+        self.assertTrue(launched.joined_existing_instance())
+
+    def test_an_app_the_test_started_may_be_force_killed(self):
+        launched = self._app(pre_existing=set(), running=[300])
+        self.assertFalse(launched.joined_existing_instance())
+
+    def test_the_force_kill_is_guarded_by_that_check(self):
+        # The guard has to sit before the taskkill, not merely exist.
+        import inspect
+        from dttwl import winfg
+
+        source = inspect.getsource(winfg.close_app)
+        self.assertIn("joined_existing_instance", source)
+        self.assertLess(source.index("joined_existing_instance"),
+                        source.index("taskkill"))
 
 
 AC_DC = os.path.join(FIXTURES, "status_ac_dc_named.xml")
