@@ -52,7 +52,7 @@
   ],
   "search_max_depth": 4,
   "report": {
-    "output_dir": "reports",
+    "output_dir": "%USERPROFILE%\\Documents\\DTT whitelist validation report",
     "formats": [
       "csv",
       "xlsx"

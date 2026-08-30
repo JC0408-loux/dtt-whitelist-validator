@@ -235,11 +235,12 @@ Copy-Item -Force (Join-Path $root "main.py") $appDir
 Copy-Item -Force (Join-Path $root "config.example.json") $appDir
 Copy-Item -Force (Join-Path $root "config.example.json") $out
 Copy-Item -Force (Join-Path $root "README.md") $out
-# Copy icon folder
+# Copy icon folder to both app directory and root for better accessibility
 $iconDir = Join-Path $root "icon"
 if (Test-Path $iconDir) { 
     Copy-Item -Recurse -Force $iconDir (Join-Path $appDir "icon")
-    Note "icon files copied"
+    Copy-Item -Recurse -Force $iconDir (Join-Path $out "icon")
+    Note "icon files copied to app and root directories"
 }
 $probe = Join-Path $root "tools\dtt_probe.html"
 if (Test-Path $probe) { Copy-Item -Force $probe $out }
@@ -299,18 +300,19 @@ if errorlevel 1 (
 Set-Content -Path (Join-Path $out $BAT_FILE_NAME) -Value $launcher -Encoding ASCII
 
 # Create a shortcut with the custom icon for taskbar display
-$iconPath = Join-Path $appDir "icon\DTT_App_Icon.ico"
+$iconPath = Join-Path $out "icon\DTT_App_Icon.ico"
 if (Test-Path $iconPath) {
     $wsh = New-Object -ComObject WScript.Shell
     $shortcut = $wsh.CreateShortcut((Join-Path $out ($BAT_FILE_NAME -replace '\.bat$', '.lnk')))
     $shortcut.TargetPath = Join-Path $out $BAT_FILE_NAME
     $shortcut.WorkingDirectory = $out
-    $shortcut.IconLocation = $iconPath
+    # Use absolute path for icon to ensure it's found
+    $shortcut.IconLocation = "$iconPath,0"
     $shortcut.Description = "DTT Whitelist Validator"
     $shortcut.Save()
     Note "created shortcut with custom icon"
 } else {
-    Warn "icon file not found, skipping shortcut creation"
+    Warn "icon file not found at $iconPath, skipping shortcut creation"
 }
 
 $console = @'

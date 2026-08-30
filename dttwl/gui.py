@@ -78,10 +78,28 @@ class ValidatorApp(tk.Tk):
         self.minsize(880, 600)
         
         # Set application icon for window and taskbar
-        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon", "DTT_App_Icon.ico")
-        if os.path.exists(icon_path):
+        # Try multiple possible icon locations
+        icon_paths = [
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon", "DTT_App_Icon.ico"),
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "icon", "DTT_App_Icon.ico"),
+            os.path.join(os.path.dirname(__file__), "icon", "DTT_App_Icon.ico"),
+        ]
+        
+        icon_path = None
+        for path in icon_paths:
+            if os.path.exists(path):
+                icon_path = path
+                break
+        
+        if icon_path:
             try:
+                # Set icon for both window and taskbar
                 self.iconbitmap(icon_path, default=True)
+                # Also set as WM_ICON for better taskbar support
+                try:
+                    self.wm_iconbitmap(icon_path)
+                except Exception:
+                    pass
             except Exception:
                 # Icon setting failed, continue without it
                 pass
@@ -298,7 +316,7 @@ class ValidatorApp(tk.Tk):
             "poll": tk.StringVar(value=str(timing["poll_interval_seconds"])),
             "samples": tk.StringVar(value=str(timing["stable_read_samples"])),
             "timeout": tk.StringVar(value=str(timing["detect_timeout_seconds"])),
-            "output": tk.StringVar(value=str(self.settings["report"]["output_dir"])),
+            "output": tk.StringVar(value=str(self.settings["report"]["output_dir"] or os.path.expanduser("%USERPROFILE%\\Documents\\DTT whitelist validation report"))),
         }
 
         grid = ttk.LabelFrame(frame, text=" DTT connection ")
@@ -813,7 +831,7 @@ class ValidatorApp(tk.Tk):
     def _export(self):
         if not self.rows:
             return
-        output_dir = self.vars["output"].get().strip() or "reports"
+        output_dir = self.vars["output"].get().strip() or os.path.expanduser("%USERPROFILE%\\Documents\\DTT whitelist validation report")
         paths = report_module.timestamped_paths(output_dir, ["csv", "xlsx"])
 
         written = [report_module.write_simple_csv(self.rows, paths["csv"])]
