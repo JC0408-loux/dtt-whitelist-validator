@@ -28,6 +28,8 @@ from .esif import EsifError
 from .runner import Detector, PreflightError, RunObserver, Runner, WindowsLauncher
 from .status import StatusParseError, derive_expected_modes
 from .version import FULL_TITLE as TITLE
+from .version import WORKLOAD_REPORT_PREFIX
+from .workload import WorkloadRunner
 
 COLOR_PASS_BG = "#1f9d55"
 COLOR_FAIL_BG = "#c0392b"
@@ -37,6 +39,10 @@ COLOR_RUN_BG = "#0076CE"
 COLOR_PASS_ROW = "#d7f2e0"
 COLOR_FAIL_ROW = "#ffd9d9"
 COLOR_SKIP_ROW = "#ededed"
+
+# Falls back to the same place config.py defaults to, so a settings box left
+# empty still writes somewhere every tester can find.
+DEFAULT_OUTPUT_DIR = config_module.DEFAULTS["report"]["output_dir"]
 
 
 CONNECTION_HINT = (
@@ -53,22 +59,30 @@ def _with_hint(exc):
 
 
 class GuiObserver(RunObserver):
-    """Pushes runner progress onto a queue the Tk thread drains."""
+    """Pushes runner progress onto a queue the Tk thread drains.
 
-    def __init__(self, events):
+    `prefix` keeps the two tabs' runs apart on the one queue: the workload tab
+    uses "wl_", so its events reach its own widgets.
+    """
+
+    def __init__(self, events, prefix=""):
         self.events = events
+        self.prefix = prefix
+
+    def _put(self, kind, payload):
+        self.events.put((self.prefix + kind, payload))
 
     def phase(self, text):
-        self.events.put(("phase", text))
+        self._put("phase", text)
 
     def case_started(self, app, round_number, index, total):
-        self.events.put(("case_started", (app, round_number, index, total)))
+        self._put("case_started", (app, round_number, index, total))
 
     def sample(self, app, status, elapsed):
-        self.events.put(("sample", (app, status, elapsed)))
+        self._put("sample", (app, status, elapsed))
 
     def case_finished(self, row):
-        self.events.put(("case_finished", row))
+        self._put("case_finished", row)
 
 
 class ValidatorApp(tk.Tk):
@@ -152,6 +166,8 @@ class ValidatorApp(tk.Tk):
         self.worker = None
         self.cancel_event = threading.Event()
         self.rows = []
+        self.wl_rows = []
+        self._wl_running = False
 
         self._build_widgets()
         self._refresh_app_table()
@@ -181,13 +197,16 @@ class ValidatorApp(tk.Tk):
         self.notebook = notebook
 
         self.tab_test = ttk.Frame(notebook)
+        self.tab_workload = ttk.Frame(notebook)
         self.tab_apps = ttk.Frame(notebook)
         self.tab_settings = ttk.Frame(notebook)
         notebook.add(self.tab_test, text="  Test  ")
+        notebook.add(self.tab_workload, text="  Workload Hint  ")
         notebook.add(self.tab_apps, text="  Application Path  ")
         notebook.add(self.tab_settings, text="  Settings  ")
 
         self._build_test_tab()
+        self._build_workload_tab()
         self._build_apps_tab()
         self._build_settings_tab()
 
@@ -262,6 +281,113 @@ class ValidatorApp(tk.Tk):
 
     def _apply_topmost(self):
         self.attributes("-topmost", bool(self.var_topmost.get()))
+
+    # -- workload hint tab -------------------------------------------------
+    #
+    # Same procedure as the Test tab -- launch each application in turn and
+    # watch DTT -- but the verdict comes from the Workload condition's own
+    # value (the "Last Known Value" the DTT page shows) rather than from the
+    # action set that value selects. The application list is the one on the
+    # Application Path tab, so a folder is scanned once and serves both.
+
+    def _build_workload_tab(self):
+        frame = self.tab_workload
+
+        live = tk.Frame(frame, bg=COLOR_IDLE_BG)
+        live.pack(fill="x", padx=4, pady=(4, 10))
+
+        self.wl_lbl_app = tk.Label(live, text="—", bg=COLOR_IDLE_BG, fg="white",
+                                   font=("Segoe UI", 26, "bold"), anchor="w")
+        self.wl_lbl_app.pack(fill="x", padx=18, pady=(14, 0))
+
+        self.wl_lbl_hint = tk.Label(live, text="DTT workload hint: —",
+                                    bg=COLOR_IDLE_BG, fg="#e6ecf3",
+                                    font=("Segoe UI", 15), anchor="w")
+        self.wl_lbl_hint.pack(fill="x", padx=18)
+
+        self.wl_lbl_phase = tk.Label(live, text="Not started", bg=COLOR_IDLE_BG,
+                                     fg="#c3ced9", font=("Segoe UI", 10), anchor="w")
+        self.wl_lbl_phase.pack(fill="x", padx=18, pady=(2, 14))
+
+        self.wl_banner = tk.Label(frame, text="IDLE", bg=COLOR_IDLE_BG, fg="white",
+                                  font=("Segoe UI", 30, "bold"), height=2)
+        self.wl_banner.pack(fill="x", padx=4)
+        self.wl_live_frame = live
+
+        controls = ttk.Frame(frame)
+        controls.pack(fill="x", padx=4, pady=10)
+
+        self.wl_btn_start = ttk.Button(controls, text="Check workload hints",
+                                       command=self._start_workload_run)
+        self.wl_btn_start.pack(side="left")
+        self.wl_btn_stop = ttk.Button(controls, text="Stop",
+                                      command=self._stop_workload_run,
+                                      state="disabled")
+        self.wl_btn_stop.pack(side="left", padx=6)
+        self.wl_btn_export = ttk.Button(controls, text="Export report",
+                                        command=self._export_workload,
+                                        state="disabled")
+        self.wl_btn_export.pack(side="left", padx=6)
+        ttk.Button(controls, text="Reload whitelist from DTT",
+                   command=self._reload_whitelist).pack(side="right")
+
+        self.wl_lbl_scan = ttk.Label(
+            frame, foreground="#55637a", justify="left",
+            text="Press \"Reload whitelist from DTT\" to read which executables "
+                 "the platform whitelists and which hint each one asserts, then "
+                 "scan a folder on the Application Path tab.")
+        self.wl_lbl_scan.pack(anchor="w", padx=4, pady=(0, 6))
+
+        self.wl_progress = ttk.Progressbar(frame, mode="determinate")
+        self.wl_progress.pack(fill="x", padx=4)
+        self.wl_lbl_progress = ttk.Label(frame, text="")
+        self.wl_lbl_progress.pack(anchor="w", padx=4, pady=(2, 8))
+
+        columns = ("number", "application", "expected", "detected", "verdict",
+                   "latency", "detail")
+        self.wl_results = ttk.Treeview(frame, columns=columns, show="headings",
+                                       height=10)
+        for key, title, width, anchor in (
+            ("number", "#", 46, "center"),
+            ("application", "application", 180, "w"),
+            ("expected", "expected hint", 110, "center"),
+            ("detected", "detected hint", 110, "center"),
+            ("verdict", "pass/fail", 90, "center"),
+            ("latency", "switch (s)", 90, "center"),
+            ("detail", "Detail", 300, "w"),
+        ):
+            self.wl_results.heading(key, text=title)
+            self.wl_results.column(key, width=width, anchor=anchor)
+        self.wl_results.tag_configure("pass", background=COLOR_PASS_ROW)
+        self.wl_results.tag_configure("fail", background=COLOR_FAIL_ROW)
+        self.wl_results.tag_configure("skip", background=COLOR_SKIP_ROW)
+
+        scroll = ttk.Scrollbar(frame, orient="vertical",
+                               command=self.wl_results.yview)
+        self.wl_results.configure(yscrollcommand=scroll.set)
+        self.wl_results.pack(side="left", fill="both", expand=True, padx=(4, 0),
+                             pady=(0, 4))
+        scroll.pack(side="left", fill="y", pady=(0, 4))
+
+    def _refresh_workload_scan(self):
+        """Say what DTT's whitelist holds, broken down by hint."""
+        if not self.apps:
+            return
+        by_hint = {}
+        ready = 0
+        for app in self.apps:
+            hint = app.get("workload_hint")
+            key = "—" if hint is None else str(hint)
+            by_hint[key] = by_hint.get(key, 0) + 1
+            if app.get("enabled", True) and (app.get("exe_path")
+                                             or app.get("shell_target")):
+                ready += 1
+        breakdown = ", ".join("hint {0}: {1}".format(hint, by_hint[hint])
+                              for hint in sorted(by_hint))
+        self.wl_lbl_scan.configure(
+            text="DTT whitelists {0} executable(s) — {1}. "
+                 "{2} have a path and will be launched; the rest are "
+                 "reported as skipped.".format(len(self.apps), breakdown, ready))
 
     # -- application path tab ---------------------------------------------
 
@@ -354,7 +480,7 @@ class ValidatorApp(tk.Tk):
             "poll": tk.StringVar(value=str(timing["poll_interval_seconds"])),
             "samples": tk.StringVar(value=str(timing["stable_read_samples"])),
             "timeout": tk.StringVar(value=str(timing["detect_timeout_seconds"])),
-            "output": tk.StringVar(value=str(self.settings.get("report", {}).get("output_dir", "C:\\Users\\Public\\Documents\\DTT whitelist validation report"))),
+            "output": tk.StringVar(value=str(self.settings.get("report", {}).get("output_dir", DEFAULT_OUTPUT_DIR))),
         }
 
         grid = ttk.LabelFrame(frame, text=" DTT connection ")
@@ -468,7 +594,7 @@ class ValidatorApp(tk.Tk):
             },
             "run": {"rounds": int(self.vars["rounds"].get()),
                     "mode": self.vars["mode"].get()},
-            "report": {"output_dir": self.vars["output"].get().strip() or "C:\\Users\\Public\\Documents\\DTT whitelist validation report"},
+            "report": {"output_dir": self.vars["output"].get().strip() or DEFAULT_OUTPUT_DIR},
             "expected_mode_by_hint": self._hint_overrides(),
             "shortcut_folder": self.var_folder.get().strip(),
             "apps": self.apps,
@@ -614,6 +740,7 @@ class ValidatorApp(tk.Tk):
         for item in selection:
             if self.app_table.exists(item):
                 self.app_table.selection_set(item)
+        self._refresh_workload_scan()
 
     # -- running -----------------------------------------------------------
 
@@ -714,6 +841,59 @@ class ValidatorApp(tk.Tk):
         self.btn_stop.configure(state="disabled")
         self.lbl_phase.configure(text="Stopping...")
 
+    # -- the workload hint check -------------------------------------------
+
+    def _start_workload_run(self):
+        if self.worker is not None and self.worker.is_alive():
+            messagebox.showinfo(TITLE, "A test is already running. Stop it first.")
+            return
+        config = self._config_or_error()
+        if config is None:
+            return
+        if not [app for app in self.apps if app.get("enabled", True)]:
+            messagebox.showinfo(TITLE, "No applications are enabled. Press "
+                                       "\"Reload whitelist from DTT\", then scan a "
+                                       "folder on the Application Path tab.")
+            return
+
+        self.wl_rows = []
+        self._wl_running = True
+        self.wl_results.delete(*self.wl_results.get_children())
+        self.cancel_event = threading.Event()
+        self.wl_btn_start.configure(state="disabled")
+        self.wl_btn_stop.configure(state="normal")
+        self.wl_btn_export.configure(state="disabled")
+        self.wl_progress.configure(value=0, maximum=100)
+
+        observer = GuiObserver(self.events, prefix="wl_")
+        hwnd = self._own_hwnd()
+
+        def work():
+            try:
+                with Detector(config, log=lambda m: self.events.put(("log", m))) as det:
+                    launcher = WindowsLauncher(config, baseline_hwnd=hwnd)
+                    runner = WorkloadRunner(config, det, launcher,
+                                            log=lambda m: self.events.put(("log", m)),
+                                            observer=observer,
+                                            cancel_event=self.cancel_event)
+                    problems, _status = runner.preflight()
+                    if problems and config["preflight"].get("abort_on_failure", True):
+                        self.events.put(("error", ("Cannot check the workload hints",
+                                                   "\n".join(problems))))
+                        return
+                    rows = runner.run()
+                    self.events.put(("wl_finished", rows))
+            finally:
+                self.events.put(("wl_worker_done", None))
+
+        self.worker = threading.Thread(target=lambda: self._guarded(work), daemon=True)
+        self.worker.start()
+
+    def _stop_workload_run(self):
+        self.cancel_event.set()
+        self.wl_btn_stop.configure(state="disabled")
+        self.wl_lbl_phase.configure(text="Stopping...")
+
     # -- event pump --------------------------------------------------------
 
     def _drain_events(self):
@@ -765,6 +945,47 @@ class ValidatorApp(tk.Tk):
             if self.rows:
                 self.btn_export.configure(state="normal")
 
+        elif kind == "wl_case_started":
+            app, round_number, index, total = payload
+            self._set_workload_live(app["process_name"], "—", None)
+            self.wl_progress.configure(maximum=total, value=index - 1)
+            self.wl_lbl_progress.configure(text="Round {0} - {1} / {2}".format(
+                round_number, index, total))
+
+        elif kind == "wl_sample":
+            app, status, elapsed = payload
+            if status is not None:
+                hint = app.get("workload_hint")
+                expected = "" if hint is None else str(hint)
+                matched = status.workload_value == expected
+                self._set_workload_live(
+                    app["process_name"], status.workload_value, matched,
+                    "+{0:.1f}s  expected hint {1}  action set={2}".format(
+                        elapsed, expected or "?", status.active_action_set))
+
+        elif kind == "wl_phase":
+            self.wl_lbl_phase.configure(text=payload)
+
+        elif kind == "wl_case_finished":
+            self._append_workload_result(payload)
+
+        elif kind == "wl_finished":
+            self.wl_rows = payload
+            self._wl_running = False
+            self._show_workload_final(payload)
+
+        elif kind == "wl_worker_done":
+            self.wl_btn_start.configure(state="normal")
+            self.wl_btn_stop.configure(state="disabled")
+            if self.wl_rows:
+                self.wl_btn_export.configure(state="normal")
+            if self._wl_running:
+                # The run ended without a verdict -- preflight refused it, or
+                # it aborted. The dialog says why; the strip must not be left
+                # reading TESTING.
+                self._wl_running = False
+                self._paint_workload(COLOR_FAIL_BG, "STOPPED")
+
         elif kind == "whitelist":
             generated, status = payload
             self.apps = generated["apps"]
@@ -815,6 +1036,85 @@ class ValidatorApp(tk.Tk):
         self.live_frame.configure(bg=colour)
         for widget in (self.lbl_app, self.lbl_mode, self.lbl_phase):
             widget.configure(bg=colour)
+
+    def _paint_workload(self, colour, text=None):
+        if text is not None:
+            self.wl_banner.configure(text=text)
+        self.wl_banner.configure(bg=colour)
+        self.wl_live_frame.configure(bg=colour)
+        for widget in (self.wl_lbl_app, self.wl_lbl_hint, self.wl_lbl_phase):
+            widget.configure(bg=colour)
+
+    def _set_workload_live(self, app_name, hint, matched, phase=None):
+        self.wl_lbl_app.configure(text=app_name)
+        self.wl_lbl_hint.configure(text="DTT workload hint: {0}".format(
+            hint if hint not in (None, "", "X") else "—"))
+        if phase:
+            self.wl_lbl_phase.configure(text=phase)
+        colour = COLOR_PASS_BG if matched is True else COLOR_RUN_BG
+        self._paint_workload(colour, "PASS" if matched is True else "TESTING...")
+
+    def _append_workload_result(self, row):
+        verdict = {"PASS": "pass", "FAIL": "fail"}.get(row.result, "skip")
+        number = len(self.wl_results.get_children()) + 1
+        detected = row.workload_value if verdict != "skip" else ""
+        self.wl_results.insert("", "end", values=(
+            number, row.process_name, row.expected_workload or "-",
+            detected or "-", verdict,
+            "" if row.switch_latency_s is None else "{0:.2f}".format(
+                row.switch_latency_s),
+            row.reason or row.notes or "",
+        ), tags=(verdict,))
+        self.wl_results.see(self.wl_results.get_children()[-1])
+
+        colour = {"pass": COLOR_PASS_BG, "fail": COLOR_FAIL_BG}.get(
+            verdict, COLOR_IDLE_BG)
+        self._paint_workload(colour, verdict.upper())
+
+    def _show_workload_final(self, rows):
+        summary = report_module.summarize(rows)
+        failing = [line for line in summary
+                   if line["verdict"] in ("FAIL", "INTERMITTENT")]
+        tested = [line for line in summary if line["verdict"] != "NOT TESTED"]
+        self.wl_progress.configure(value=self.wl_progress["maximum"])
+
+        if failing:
+            self.wl_banner.configure(text="{0} FAILED".format(len(failing)),
+                                     bg=COLOR_FAIL_BG)
+            self.wl_lbl_phase.configure(text="wrong or missing hint: " + ", ".join(
+                line["process_name"] for line in failing))
+        elif tested:
+            self.wl_banner.configure(text="ALL PASS", bg=COLOR_PASS_BG)
+            self.wl_lbl_phase.configure(
+                text="every application launched asserted the hint DTT expects")
+        else:
+            self.wl_banner.configure(text="NOTHING TESTED", bg=COLOR_IDLE_BG)
+            self.wl_lbl_phase.configure(
+                text="no application had a path to launch")
+
+        self.wl_lbl_app.configure(text="Workload hint check complete")
+        self.wl_lbl_hint.configure(
+            text="{0} checked, {1} correct, {2} wrong, {3} skipped".format(
+                len(tested), len(tested) - len(failing), len(failing),
+                len(summary) - len(tested)))
+        self.wl_live_frame.configure(bg=COLOR_RUN_BG)
+        for widget in (self.wl_lbl_app, self.wl_lbl_hint, self.wl_lbl_phase):
+            widget.configure(bg=COLOR_RUN_BG)
+
+    def _export_workload(self):
+        if not self.wl_rows:
+            return
+        output_dir = self.vars["output"].get().strip() or DEFAULT_OUTPUT_DIR
+        paths = report_module.timestamped_paths(
+            output_dir, ["csv", "xlsx"], prefix=WORKLOAD_REPORT_PREFIX)
+
+        written = [report_module.write_workload_csv(self.wl_rows, paths["csv"])]
+        xlsx = report_module.write_workload_xlsx(self.wl_rows, paths["xlsx"])
+        if xlsx:
+            written.append(xlsx)
+
+        messagebox.showinfo(TITLE, "Exported:\n\n" + "\n".join(
+            os.path.abspath(path) for path in written))
 
     def _append_result(self, row):
         verdict = {"PASS": "pass", "FAIL": "fail"}.get(row.result, "skip")
@@ -869,7 +1169,7 @@ class ValidatorApp(tk.Tk):
     def _export(self):
         if not self.rows:
             return
-        output_dir = self.vars["output"].get().strip() or "C:\\Users\\Public\\Documents\\DTT whitelist validation report"
+        output_dir = self.vars["output"].get().strip() or DEFAULT_OUTPUT_DIR
         paths = report_module.timestamped_paths(output_dir, ["csv", "xlsx"])
 
         written = [report_module.write_simple_csv(self.rows, paths["csv"])]

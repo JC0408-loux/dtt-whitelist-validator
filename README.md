@@ -158,6 +158,17 @@ application under test holds the foreground -- being on top is not the same as
 having focus, so it does not disturb the measurement. Finished cases build up
 in a list underneath, coloured the same way.
 
+**Workload Hint** runs the same sweep one step earlier in the chain. Instead
+of asking "did the expected action set become active?", it asks "did DTT's
+`Workload` condition take the hint this executable is supposed to assert?" --
+the value the DTT page shows as *Last Known Value* in its Conditions table. It
+uses the same application list as the Test tab, so one folder scan serves both,
+and it reports the expected hint against the detected one per application. See
+[Workload hint or action set?](#workload-hint-or-action-set) for when to use
+which.
+
+![Workload Hint tab](docs/ui_workload_hint.png)
+
 **Application Path** is where the applications come from. Point it at one
 folder holding a shortcut (.lnk) or executable for each application under
 test and press *scan*: the target is read out of each shortcut and matched
@@ -218,10 +229,13 @@ dtt-wl-validator init-config --resolve   Generate config.json from DTT's own
 dtt-wl-validator resolve-paths           Fill in blank exe_path values later.
 dtt-wl-validator verify-stub             Check whether stub mode works here.
 dtt-wl-validator run                     Run the sweep and write the report.
+dtt-wl-validator workload                Run the same sweep but judge each
+                                         application on DTT's Workload hint
+                                         rather than the action set.
 ```
 
-`run` exits 0 when everything passed, 1 when something failed, 2 on a setup
-problem.
+`run` and `workload` exit 0 when everything passed, 1 when something failed,
+2 on a setup problem.
 
 ### Getting started
 
@@ -235,6 +249,38 @@ dtt-wl-validator run --rounds 3
 expected mode for each executable cannot drift from what the platform actually
 applies. Fill in `exe_path` for anything `--resolve` could not find; entries
 with no path are reported as `SKIP`, never as a failure.
+
+## Workload hint or action set?
+
+The platform works in a chain, and the two tabs cut it at different points:
+
+```
+foreground application -> APAT asserts a workload hint (1 or 2)
+                       -> DTT's "Workload" condition takes that value   <- Workload Hint tab
+                       -> an action set whose minterms include it wins  <- Test tab
+                       -> different PL1MAX / PL1MIN are applied
+```
+
+**Test** is the full-chain check and the one to report against: it proves the
+platform actually changed its power limits for that application.
+
+**Workload Hint** checks only the first half. That is the half the whitelist
+governs, so it answers a narrower question -- *did APAT recognise this
+executable?* -- and answers it even when the second half cannot happen. An
+action set can fail to win the arbitration for reasons that have nothing to do
+with the whitelist: the machine is on battery, an OEM variable is set, or a
+higher-priority row preempts it. In every one of those the hint is still
+asserted correctly and the whitelist entry is fine.
+
+So: a failure on both tabs points at the whitelist entry or at APAT. A pass on
+Workload Hint with a failure on Test points at the conditions table instead --
+DTT saw the hint and chose not to act on it, and the Test tab's Detail column
+names the minterm that stopped it.
+
+One thing to watch: if the machine already idles at the hint under test with
+nothing whitelisted in the foreground, the case matches the instant it starts
+and proves nothing. That row still reads `pass`, but it is marked
+`inconclusive` in the Detail column rather than counted as evidence.
 
 ## Which action set each hint expects
 
@@ -346,6 +392,20 @@ temperature, the applied `PL1MAX`/`PL1MIN`, and the failure reason.
 `INTERMITTENT`. Raise `run.rounds` above 1 to catch a mode switch that works
 most of the time: a single sweep cannot tell intermittent from reliable.
 
+The Workload Hint tab and `dtt-wl-validator workload` write their own pair,
+`dtt_workload_report_<timestamp>.csv` / `.xlsx`, so a hint check never
+overwrites a whitelist report:
+
+```
+# | application    | expected workload hint | detected workload hint | pass/fail
+1 | cinebench.exe  | 2                      | 2                      | pass
+2 | msedge.exe     | 1                      | 1                      | pass
+3 | steam.exe      | 2                      | X                      | fail
+```
+
+The .xlsx carries the same *Details* sheet, so both kinds of run can be
+compared case by case.
+
 ## Configuration
 
 | Key | Purpose |
@@ -359,6 +419,7 @@ most of the time: a single sweep cannot tell intermittent from reliable.
 | `run.mode` | `real` or `stub` |
 | `expected_mode_by_hint` | override the derived action set for a hint; empty means derive |
 | `baseline_mode` | idle action set; `null` learns it from the machine |
+| `baseline_workload` | idle workload hint for the hint check; `null` learns it |
 | `preflight.require_power_source` | usually `AC` |
 | `search_paths` | directories `resolve-paths` searches |
 | `shortcut_folder` | the folder of shortcuts the window scans |
@@ -411,6 +472,7 @@ dttwl/winfg.py      launching, foreground control, closing (Windows)
 dttwl/stub.py       renamed-executable stub window
 dttwl/shortcuts.py  reading .lnk targets and matching them to the whitelist
 dttwl/runner.py     preflight and the test loop
+dttwl/workload.py   the same loop judged on the Workload hint, not the action set
 dttwl/gui.py        the desktop window
 dttwl/report.py     CSV / XLSX output
 dttwl/cli.py        command line

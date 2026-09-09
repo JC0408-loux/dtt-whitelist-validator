@@ -50,6 +50,27 @@ is read out of DTT's own conditions table, never guessed.
 `SKIP` is not a failure: it means the application is not installed on this
 machine. This is normal and common — a test machine will never have all 34.
 
+### The two cuts through that chain
+
+The **Workload Hint** tab (`workload.py`, `dtt-wl-validator workload`) runs the
+identical procedure but takes its verdict from the third line of the diagram —
+DTT's `Workload` condition value, the "Last Known Value" the DTT page shows —
+instead of the fourth. Nothing else differs: same preflight, same baseline,
+same launch and foreground control, same close and de-assert.
+
+Why both exist: an action set can fail to win the arbitration for reasons the
+whitelist has nothing to do with (DC power, an OEM variable, a higher-priority
+row). In all of those the hint is asserted correctly and the whitelist entry is
+fine. Judging on the hint separates *"APAT did not recognise this
+executable"* from *"DTT saw the hint and chose not to act on it"*.
+
+`WorkloadRunner` is a subclass of `Runner` that overrides exactly three things
+— `_expected_for`, `_observe`, `_explain_miss` — plus its preflight checks and
+its skip reason. **Keep it that way.** If a change needs to fork more of the
+loop than that, the loop is what should be adjusted, not duplicated: the
+launch/foreground/close machinery is where the hard-won constraints in section
+3 live, and a second copy of it will drift out of step with them.
+
 ---
 
 ## 2. How the tool talks to DTT
@@ -187,6 +208,8 @@ main.py -> dttwl/cli.py -> gui.py (default)  or  a subcommand
     runner.py             winfg.py              report.py
    (the test loop)   (launch + foreground)   (CSV / XLSX)
         |
+        +-- workload.py  (same loop, judged on the Workload hint)
+        |
    detector -> esif.py -> wsclient.py -> ws://localhost:8888/echo
                   |
               status.py  (XML -> conditions, active action set, diagnosis)
@@ -194,18 +217,19 @@ main.py -> dttwl/cli.py -> gui.py (default)  or  a subcommand
 
 | File | Lines | Role |
 | --- | --- | --- |
-| `wsclient.py` | 202 | minimal RFC 6455 client, standard library only |
-| `esif.py` | 179 | ESIF command framing, module discovery, handshake variants |
-| `status.py` | 277 | status XML -> conditions, arbitration, name derivation |
-| `runner.py` | 490 | preflight and the test loop |
-| `winfg.py` | 281 | **Windows only** — launching, foreground control, closing |
-| `stub.py` | 143 | **Windows only** — the renamed-executable stub window |
-| `shortcuts.py` | 147 | reads `.lnk` targets, matches them to the whitelist |
-| `diagnose.py` | 300 | layered connection checks |
-| `config.py` | 198 | defaults, validation, generation from the live tables |
-| `report.py` | 242 | summary and detail reports |
-| `gui.py` | 707 | the tkinter window |
-| `cli.py` | 286 | command line |
+| `wsclient.py` | 240 | minimal RFC 6455 client, standard library only |
+| `esif.py` | 214 | ESIF command framing, module discovery, handshake variants |
+| `status.py` | 333 | status XML -> conditions, arbitration, name derivation |
+| `runner.py` | 618 | preflight and the test loop |
+| `workload.py` | 138 | the same loop, judged on the Workload hint |
+| `winfg.py` | 355 | **Windows only** — launching, foreground control, closing |
+| `stub.py` | 181 | **Windows only** — the renamed-executable stub window |
+| `shortcuts.py` | 177 | reads `.lnk` targets, matches them to the whitelist |
+| `diagnose.py` | 344 | layered connection checks |
+| `config.py` | 226 | defaults, validation, generation from the live tables |
+| `report.py` | 371 | summary and detail reports |
+| `gui.py` | 1211 | the tkinter window |
+| `cli.py` | 427 | command line |
 
 Supporting material:
 
@@ -226,7 +250,7 @@ Supporting material:
 python -m unittest discover -s tests -t .
 ```
 
-**76 tests.** They must all pass before you claim anything is done. Configure
+**90 tests.** They must all pass before you claim anything is done. Configure
 this as the repository's test command so it runs automatically.
 
 ### The tests are the only ground truth available off-hardware

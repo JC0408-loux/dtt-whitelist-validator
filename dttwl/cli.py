@@ -8,9 +8,11 @@ import time
 from . import config as config_module
 from . import diagnose as diagnose_module
 from . import report as report_module
+from . import version as version_module
 from .esif import EsifError
 from .runner import Detector, PreflightError, Runner, WindowsLauncher
 from .status import StatusParseError
+from .workload import WorkloadRunner
 
 DEFAULT_CONFIG = "config.json"
 
@@ -198,6 +200,67 @@ def cmd_run(args):
     return _write_reports(config, rows)
 
 
+def cmd_workload(args):
+    """Judge each application on DTT's Workload hint rather than the action set."""
+    config = _load_config(args)
+    if args.rounds:
+        config["run"]["rounds"] = args.rounds
+    if args.mode:
+        config["run"]["mode"] = args.mode
+
+    with _detector(config) as detector:
+        runner = WorkloadRunner(config, detector, WindowsLauncher(config, log), log)
+
+        problems, _status = runner.preflight()
+        for problem in problems:
+            log("preflight: {0}".format(problem))
+        if problems and config["preflight"].get("abort_on_failure", True):
+            log("")
+            log("Aborting: fix the problems above, or set "
+                "preflight.abort_on_failure to false to run anyway.")
+            return 2
+
+        rows = runner.run()
+
+    return _write_workload_reports(config, rows)
+
+
+def _write_workload_reports(config, rows):
+    output_dir = config["report"]["output_dir"]
+    paths = report_module.timestamped_paths(
+        output_dir, config["report"]["formats"],
+        prefix=version_module.WORKLOAD_REPORT_PREFIX)
+
+    written = []
+    if "csv" in paths:
+        written.append(report_module.write_workload_csv(rows, paths["csv"]))
+    if "xlsx" in paths:
+        result = report_module.write_workload_xlsx(rows, paths["xlsx"])
+        if result:
+            written.append(result)
+        else:
+            log("note: openpyxl is not bundled in this build, CSV only")
+
+    entries = report_module.workload_rows(rows)
+    failing = [entry for entry in entries if entry["verdict"] == "fail"]
+
+    log("")
+    log("=" * 64)
+    log("WORKLOAD HINTS  ({0} applications, {1} test cases)".format(
+        len(entries), len(rows)))
+    log("=" * 64)
+    for entry in entries:
+        log("  {0:<6} {1:<26} expected {2:<4} detected {3}".format(
+            entry["verdict"], entry["application"], entry["expected_hint"],
+            entry["detected_hint"]))
+
+    log("")
+    for path in written:
+        log("report: {0}".format(path))
+
+    return 1 if failing else 0
+
+
 def _write_reports(config, rows):
     output_dir = config["report"]["output_dir"]
     formats = config["report"]["formats"]
@@ -284,6 +347,15 @@ def build_parser():
     run.add_argument("--rounds", type=int, help="override run.rounds")
     run.add_argument("--mode", choices=["real", "stub"], help="override run.mode")
     run.set_defaults(func=cmd_run)
+
+    workload = sub.add_parser(
+        "workload",
+        help="launch each application and check DTT's Workload hint itself, "
+             "rather than the action set that hint selects")
+    workload.add_argument("--rounds", type=int, help="override run.rounds")
+    workload.add_argument("--mode", choices=["real", "stub"],
+                          help="override run.mode")
+    workload.set_defaults(func=cmd_workload)
 
     gui = sub.add_parser("gui", help="open the desktop window (default when the "
                                      "executable is started with no arguments)")

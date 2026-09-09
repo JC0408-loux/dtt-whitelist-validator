@@ -178,13 +178,32 @@ class Runner:
         self.observer = observer or RunObserver()
         self._current_app = None
         self.cancel_event = cancel_event
-        self.baseline_mode = config.get("baseline_mode")
+        self.baseline = config.get("baseline_mode")
         self.expected_by_hint = {}
         self.rows = []
 
     def _check_cancelled(self):
         if self.cancel_event is not None and self.cancel_event.is_set():
             raise RunCancelled()
+
+    # -- what a case is judged on ------------------------------------------
+    #
+    # This runner compares DTT's active action set. `WorkloadRunner` in
+    # workload.py overrides these three and inherits everything else, because
+    # the procedure either way is the same: return to baseline, launch, take
+    # the foreground, poll until the reading is stable, close, measure the
+    # de-assert. Only the value being compared differs.
+
+    OBSERVED = "action set"
+
+    def _expected_for(self, app):
+        return app.get("expected_mode") or ""
+
+    def _observe(self, status):
+        return status.active_action_set
+
+    def _explain_miss(self, status, app):
+        return status.explain(self._expected_for(app))
 
     # -- preflight ---------------------------------------------------------
 
@@ -195,11 +214,24 @@ class Runner:
         is on battery wastes half an hour, so the blocking conditions are
         checked once up front.
         """
-        problems = []
         self._warn_about_timing()
         self.launcher.go_baseline()
         status = self.detector.read()
 
+        problems = self._check_platform(status)
+        problems.extend(self._check_expectations(status))
+        self._learn_baseline(status)
+        problems.extend(self._check_neutral_foreground(status))
+
+        self.log("preflight: power={0}, workload={1}, active={2}, SEN6={3}".format(
+            status.power_source, status.workload_value, status.active_action_set,
+            status.temperatures.get("SEN6", "n/a"),
+        ))
+        return problems, status
+
+    def _check_platform(self, status):
+        """Power source and OEM variables -- the same for every kind of run."""
+        problems = []
         required_power = self.config["preflight"].get("require_power_source")
         if required_power and status.power_source != required_power:
             problems.append(
@@ -219,7 +251,10 @@ class Runner:
                 problems.append(
                     "OEM Variable {0} is {1}, expected {2}".format(position, actual, expected)
                 )
+        return problems
 
+    def _check_expectations(self, status):
+        """Confirm every enabled application has an action set to look for."""
         # Read the action set for each workload hint off this platform, so a
         # config written on a machine that names them optimized_WL* still works
         # on one that names them AC_O_WL*.
@@ -231,6 +266,7 @@ class Runner:
                 for hint, name in sorted(self.expected_by_hint.items())))
         self._apply_expected_modes()
 
+        problems = []
         known = set(status.action_sets.values())
         for app in self._enabled_apps():
             if not app["expected_mode"]:
@@ -246,17 +282,21 @@ class Runner:
                     "table".format(app["expected_mode"], app["process_name"])
                 )
                 break
+        return problems
 
-        if self.baseline_mode is None:
-            self.baseline_mode = status.active_action_set
-            self.log("learned baseline action set: {0}".format(self.baseline_mode))
-        elif status.active_action_set != self.baseline_mode:
+    def _learn_baseline(self, status):
+        observed = self._observe(status)
+        if self.baseline is None:
+            self.baseline = observed
+            self.log("learned baseline {0}: {1}".format(self.OBSERVED, self.baseline))
+        elif observed != self.baseline:
             self.log(
-                "note: idle action set is '{0}' but config expects '{1}'".format(
-                    status.active_action_set, self.baseline_mode
+                "note: idle {0} is '{1}' but config expects '{2}'".format(
+                    self.OBSERVED, observed, self.baseline
                 )
             )
 
+    def _check_neutral_foreground(self, status):
         whitelisted = {
             name for names in status.workload_groups.values() for name in names
         }
@@ -266,16 +306,11 @@ class Runner:
         except Exception:  # pragma: no cover - diagnostic only
             pass
         if current and current in whitelisted:
-            problems.append(
+            return [
                 "the foreground window belongs to '{0}', which is whitelisted; "
                 "the baseline is not neutral".format(current)
-            )
-
-        self.log("preflight: power={0}, workload={1}, active={2}, SEN6={3}".format(
-            status.power_source, status.workload_value, status.active_action_set,
-            status.temperatures.get("SEN6", "n/a"),
-        ))
-        return problems, status
+            ]
+        return []
 
     def _warn_about_timing(self):
         """Say so when the timings leave almost no room for a slow switch.
@@ -326,7 +361,7 @@ class Runner:
         """
         candidate = None
         for app in self._enabled_apps():
-            if app["expected_mode"] != self.baseline_mode:
+            if app["expected_mode"] != self.baseline:
                 candidate = app
                 break
         if candidate is None:
@@ -393,12 +428,14 @@ class Runner:
 
     def _run_case(self, app, round_number, mode):
         timing = self.config["timing"]
+        hint = app.get("workload_hint")
         row = ResultRow(
             app_name=app.get("app_name") or app["process_name"],
             process_name=app["process_name"],
             round_number=round_number,
             mode=mode,
             expected_mode=app["expected_mode"],
+            expected_workload="" if hint is None else str(hint),
         )
 
         self._current_app = app
@@ -410,7 +447,7 @@ class Runner:
             row.reason = skip
             return row
 
-        self.observer.phase("waiting for baseline '{0}'".format(self.baseline_mode))
+        self.observer.phase("waiting for baseline '{0}'".format(self.baseline))
         if not self._return_to_baseline(row, timing):
             return row
 
@@ -428,7 +465,7 @@ class Runner:
                 self._safe_close(handle, timing, row)
             return row
 
-        matched, latency, status = self._watch_for_mode(app["expected_mode"], t0, timing)
+        matched, latency, status = self._watch_for(self._expected_for(app), t0, timing)
         self._fill_state(row, status)
         row.detected_mode = status.active_action_set if status else ""
 
@@ -446,7 +483,7 @@ class Runner:
         else:
             row.result = FAIL
             row.reason = (
-                status.explain(app["expected_mode"]) if status else "no reading from DTT"
+                self._explain_miss(status, app) if status else "no reading from DTT"
             )
 
         close_note = self._safe_close(handle, timing, row)
@@ -458,15 +495,15 @@ class Runner:
             row.notes = _join(
                 row.notes,
                 "did not return to baseline '{0}' within {1:.0f}s (state bleed)".format(
-                    self.baseline_mode, float(timing["baseline_timeout_seconds"])
+                    self.baseline, float(timing["baseline_timeout_seconds"])
                 ),
             )
         else:
             row.deassert_latency_s = deassert
         return row
 
-    def _watch_for_mode(self, expected, t0, timing):
-        """Poll DTT until `expected` has been the active action set N times.
+    def _watch_for(self, expected, t0, timing):
+        """Poll DTT until the observed value has been `expected` N times.
 
         Polling from the moment the window reached the foreground -- rather
         than sleeping for the debounce and taking one reading -- both avoids
@@ -489,7 +526,7 @@ class Runner:
 
             self.observer.sample(self._current_app, status, time.monotonic() - t0)
 
-            if status is not None and status.active_action_set == expected:
+            if status is not None and self._observe(status) == expected:
                 if consecutive == 0:
                     first_match = time.monotonic()
                 consecutive += 1
@@ -509,7 +546,7 @@ class Runner:
         except Exception as exc:  # pragma: no cover - diagnostic only
             self.log("could not focus the baseline window: {0}".format(exc))
 
-        if self.baseline_mode is None:
+        if self.baseline is None:
             return True
 
         deadline = time.monotonic() + float(timing["baseline_timeout_seconds"])
@@ -522,20 +559,21 @@ class Runner:
                 row.result = ERROR
                 row.reason = "DTT unreachable before the test case: {0}".format(exc)
                 return False
-            if last.active_action_set == self.baseline_mode:
+            if self._observe(last) == self.baseline:
                 return True
             if time.monotonic() >= deadline:
                 row.result = ERROR
                 row.reason = (
                     "machine was not at baseline '{0}' before the test case "
-                    "(active: {1})".format(self.baseline_mode, last.active_action_set)
+                    "({1}: {2})".format(self.baseline, self.OBSERVED,
+                                        self._observe(last))
                 )
                 self._fill_state(row, last)
                 return False
             time.sleep(float(timing["poll_interval_seconds"]))
 
     def _measure_deassert(self, timing):
-        if self.baseline_mode is None:
+        if self.baseline is None:
             return None
         try:
             self.launcher.go_baseline()
@@ -549,7 +587,7 @@ class Runner:
                 status = self.detector.read()
             except EsifError:
                 status = None
-            if status is not None and status.active_action_set == self.baseline_mode:
+            if status is not None and self._observe(status) == self.baseline:
                 return time.monotonic() - start
             if time.monotonic() >= deadline:
                 return None

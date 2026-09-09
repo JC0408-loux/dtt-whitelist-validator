@@ -134,7 +134,7 @@ class GuiTests(unittest.TestCase):
 
         # The table must actually be on screen with a row per application;
         # widgets on an unselected notebook tab are not mapped.
-        self.app.notebook.select(1)
+        self.app.notebook.select(self.app.tab_apps)
         self.pump(0.2)
         self.assertTrue(self.app.app_table.winfo_ismapped())
         self.assertEqual(len(self.app.app_table.get_children()), len(self.app.apps))
@@ -281,6 +281,103 @@ class GuiTests(unittest.TestCase):
                          "D:\\Apps\\Adobe\\photoshop.exe")
         values = self.app.app_table.item(str(index), "values")
         self.assertEqual(values[3], "D:\\Apps\\Adobe\\photoshop.exe")
+
+    # -- workload hint tab -------------------------------------------------
+
+    def test_the_workload_tab_reports_what_dtt_whitelists(self):
+        self.load_whitelist()
+        self.pump(0.2)
+        text = self.app.wl_lbl_scan["text"]
+        self.assertIn("34 executable(s)", text)
+        self.assertIn("hint 1: 8", text)
+        self.assertIn("hint 2: 26", text)
+
+    def test_the_workload_tab_checks_the_hint_and_exports_its_own_report(self):
+        self.load_whitelist()
+        folder = self.shortcut_folder({
+            "Cinebench.lnk": "C:\\Tools\\Cinebench\\cinebench.exe",
+            "Microsoft Edge.lnk": "C:\\Program Files\\Microsoft\\Edge\\msedge.exe",
+        })
+        self.app.var_folder.set(folder)
+        self.app._scan_folder()
+        for entry in self.app.apps:
+            entry["enabled"] = entry["process_name"] in ("cinebench.exe", "msedge.exe")
+
+        self.app._start_workload_run()
+        self.assertTrue(self.wait_until(lambda: len(self.app.wl_rows) == 2, 60),
+                        "workload run did not finish: {0}".format(self.dialogs))
+
+        self.assertEqual({row.result for row in self.app.wl_rows}, {"PASS"})
+        self.assertEqual(self.app.wl_banner["text"], "ALL PASS")
+        self.assertEqual(self.app.wl_banner["bg"], self.gui_module.COLOR_PASS_BG)
+
+        # The table states the hint DTT reported, not the action set.
+        values = [self.app.wl_results.item(item, "values")
+                  for item in self.app.wl_results.get_children()]
+        self.assertEqual([row[1] for row in values],
+                         ["msedge.exe", "cinebench.exe"])
+        self.assertEqual([(row[2], row[3]) for row in values],
+                         [("1", "1"), ("2", "2")])
+        self.assertTrue(all(row[4] == "pass" for row in values), values)
+
+        # The whitelist tab's own results are untouched by this run.
+        self.assertEqual(self.app.rows, [])
+        self.assertEqual(len(self.app.results.get_children()), 0)
+
+        self.app._export_workload()
+        self.pump(0.2)
+        reports = os.listdir(os.path.join(self.workdir, "reports"))
+        summary = [f for f in reports
+                   if f.startswith("dtt_workload_report_") and f.endswith(".csv")]
+        self.assertEqual(len(summary), 1)
+        with open(os.path.join(self.workdir, "reports", summary[0]),
+                  encoding="utf-8-sig") as handle:
+            lines = handle.read().splitlines()
+        self.assertEqual(
+            lines[0],
+            "#,application,expected workload hint,detected workload hint,pass/fail")
+        self.assertEqual(lines[1], "1,msedge.exe,1,1,pass")
+        self.assertEqual(lines[2], "2,cinebench.exe,2,2,pass")
+
+    def test_a_wrong_hint_turns_the_workload_banner_red(self):
+        self.load_whitelist()
+        folder = self.shortcut_folder({
+            "Cinebench.lnk": "C:\\Tools\\Cinebench\\cinebench.exe"})
+        self.app.var_folder.set(folder)
+        self.app._scan_folder()
+        for entry in self.app.apps:
+            entry["enabled"] = entry["process_name"] == "cinebench.exe"
+            if entry["enabled"]:
+                entry["workload_hint"] = 1      # cinebench is really hint 2
+
+        self.app._start_workload_run()
+        self.assertTrue(self.wait_until(lambda: len(self.app.wl_rows) == 1, 60),
+                        "workload run did not finish: {0}".format(self.dialogs))
+
+        self.assertEqual(self.app.wl_rows[0].result, "FAIL")
+        self.assertEqual(self.app.wl_banner["bg"], self.gui_module.COLOR_FAIL_BG)
+        values = self.app.wl_results.item(
+            self.app.wl_results.get_children()[0], "values")
+        self.assertEqual((values[2], values[3], values[4]), ("1", "2", "fail"))
+        self.assertIn("reported workload hint 2", values[6])
+
+    def test_the_workload_table_is_on_screen_with_a_row_per_result(self):
+        self.load_whitelist()
+        folder = self.shortcut_folder({
+            "Cinebench.lnk": "C:\\Tools\\Cinebench\\cinebench.exe"})
+        self.app.var_folder.set(folder)
+        self.app._scan_folder()
+        for entry in self.app.apps:
+            entry["enabled"] = entry["process_name"] == "cinebench.exe"
+
+        self.app.notebook.select(self.app.tab_workload)
+        self.pump(0.2)
+        self.assertTrue(self.app.wl_results.winfo_ismapped())
+
+        self.app._start_workload_run()
+        self.assertTrue(self.wait_until(lambda: len(self.app.wl_rows) == 1, 60),
+                        "workload run did not finish: {0}".format(self.dialogs))
+        self.assertEqual(len(self.app.wl_results.get_children()), 1)
 
     def test_selecting_a_row_loads_its_current_path(self):
         self.load_whitelist()

@@ -38,6 +38,9 @@ DEFAULTS = {
     "expected_mode_by_hint": {},
     # Left null so the runner learns the idle action set from the machine.
     "baseline_mode": None,
+    # The same for the workload-hint check: the hint value seen with nothing
+    # whitelisted in the foreground, learned from the machine unless set here.
+    "baseline_workload": None,
     "preflight": {
         "require_power_source": "AC",
         "require_oem_variables": {},

@@ -12,9 +12,12 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dttwl import config as config_module
-from dttwl.report import ERROR, FAIL, PASS, SKIP, summarize, write_csv
+from dttwl import workload as workload_module
+from dttwl.report import (ERROR, FAIL, PASS, SKIP, WORKLOAD_HEADER, summarize,
+                          write_csv, write_workload_csv)
 from dttwl.runner import Detector, Runner
 from dttwl.status import parse_status, split_application_names
+from dttwl.workload import WorkloadRunner
 from tests.mock_dtt import DttSimulator, FakeLauncher, MockDttServer
 
 FIXTURES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures")
@@ -139,7 +142,7 @@ class RunnerTests(unittest.TestCase):
         runner = self._runner(config)
         problems, status = runner.preflight()
         self.assertEqual(problems, [])
-        self.assertEqual(runner.baseline_mode, "optimized")
+        self.assertEqual(runner.baseline, "optimized")
         self.assertEqual(status.power_source, "AC")
 
     def test_preflight_blocks_on_dc_power(self):
@@ -276,6 +279,140 @@ class RunnerTests(unittest.TestCase):
             lines = handle.read().splitlines()
         self.assertIn("cinebench", lines[1])
         self.assertIn("FAIL", lines[1])
+
+
+class WorkloadRunnerTests(unittest.TestCase):
+    """The workload-hint check: the verdict is DTT's Workload value itself."""
+
+    def setUp(self):
+        self.simulator = DttSimulator(WL1, extra_fixtures=[WL2])
+        self.server = MockDttServer(self.simulator).start()
+        self.addCleanup(self.server.stop)
+        self.messages = []
+
+    def _runner(self, config, launcher=None):
+        detector = Detector(config, log=self.messages.append)
+        detector.open()
+        self.addCleanup(detector.close)
+        launcher = launcher or FakeLauncher(self.simulator)
+        return WorkloadRunner(config, detector, launcher, log=self.messages.append)
+
+    @staticmethod
+    def _app(process_name, hint, **extra):
+        return app(process_name, "", workload_hint=hint, **extra)
+
+    def test_preflight_learns_the_idle_hint_as_the_baseline(self):
+        config = base_config(self.server.port,
+                             apps=[self._app("cinebench.exe", 2)])
+        runner = self._runner(config)
+        problems, _status = runner.preflight()
+        self.assertEqual(problems, [])
+        # Nothing whitelisted in the foreground: DTT reports no hint.
+        self.assertEqual(runner.baseline, "X")
+
+    def test_the_hint_is_what_decides_the_verdict(self):
+        config = base_config(self.server.port, apps=[
+            self._app("cinebench.exe", 2),
+            self._app("chrome.exe", 1),
+        ])
+        runner = self._runner(config)
+        runner.preflight()
+        rows = runner.run()
+
+        self.assertEqual([row.result for row in rows], [PASS, PASS])
+        self.assertEqual([row.expected_workload for row in rows], ["2", "1"])
+        self.assertEqual([row.workload_value for row in rows], ["2", "1"])
+        for row in rows:
+            self.assertIsNotNone(row.switch_latency_s)
+
+    def test_a_wrong_hint_fails_and_names_both_values(self):
+        config = base_config(self.server.port,
+                             apps=[self._app("cinebench.exe", 1)])
+        runner = self._runner(config)
+        runner.preflight()
+        rows = runner.run()
+
+        self.assertEqual(rows[0].result, FAIL)
+        self.assertEqual(rows[0].workload_value, "2")
+        self.assertIn("reported workload hint 2", rows[0].reason)
+        self.assertIn("expected 1", rows[0].reason)
+
+    def test_an_unrecognised_executable_says_no_hint_was_asserted(self):
+        self.simulator.hint_by_process.pop("cinebench.exe")
+        config = base_config(self.server.port,
+                             apps=[self._app("cinebench.exe", 2)])
+        runner = self._runner(config)
+        runner.preflight()
+        rows = runner.run()
+
+        self.assertEqual(rows[0].result, FAIL)
+        self.assertIn("no workload hint", rows[0].reason)
+
+    def test_an_app_without_a_hint_is_skipped(self):
+        config = base_config(self.server.port,
+                             apps=[self._app("cinebench.exe", None)])
+        runner = self._runner(config)
+        # Preflight refuses the run outright rather than testing nothing.
+        problems, _status = runner.preflight()
+        self.assertTrue(any("has no workload hint" in p for p in problems))
+        self.assertEqual(runner.run()[0].result, SKIP)
+
+    def test_a_hint_the_platform_does_not_use_is_reported_in_preflight(self):
+        config = base_config(self.server.port,
+                             apps=[self._app("cinebench.exe", 7)])
+        runner = self._runner(config)
+        problems, _status = runner.preflight()
+        self.assertTrue(any("does not use" in p for p in problems), problems)
+
+    def test_a_pass_is_marked_inconclusive_when_the_idle_hint_already_matches(self):
+        # A machine sitting at hint 2 with nothing whitelisted in front cannot
+        # show that the application under test is what asserted it.
+        self.simulator.hint_by_process[""] = "2"      # idle reports hint 2 too
+        config = base_config(self.server.port,
+                             apps=[self._app("cinebench.exe", 2)])
+        runner = self._runner(config)
+        runner.preflight()
+        rows = runner.run()
+
+        self.assertEqual(rows[0].result, PASS)
+        self.assertIn("inconclusive", rows[0].notes)
+
+    def test_the_action_set_is_still_recorded_alongside_the_hint(self):
+        # Judged on the hint, but the action set is what the whitelist tab
+        # reports, so keeping it makes the two runs comparable.
+        config = base_config(self.server.port,
+                             apps=[self._app("cinebench.exe", 2)])
+        runner = self._runner(config)
+        runner.preflight()
+        rows = runner.run()
+        self.assertEqual(rows[0].detected_mode, "optimized_WL2")
+
+    def test_the_report_lists_expected_against_detected(self):
+        import tempfile
+
+        config = base_config(self.server.port, apps=[
+            self._app("cinebench.exe", 2),
+            self._app("chrome.exe", 2),          # wrong: chrome is hint 1
+        ])
+        runner = self._runner(config)
+        runner.preflight()
+        rows = runner.run()
+
+        path = os.path.join(tempfile.mkdtemp(), "workload.csv")
+        write_workload_csv(rows, path)
+        with open(path, encoding="utf-8-sig") as handle:
+            lines = handle.read().splitlines()
+
+        self.assertEqual(lines[0], ",".join(WORKLOAD_HEADER))
+        self.assertEqual(lines[1], "1,cinebench.exe,2,2,pass")
+        self.assertEqual(lines[2], "2,chrome.exe,2,1,fail")
+
+    def test_scan_lists_every_whitelisted_executable_with_its_hint(self):
+        status = parse_status(read_fixture(WL1))
+        entries = dict(workload_module.scan(status))
+        self.assertEqual(entries["cinebench.exe"], "2")
+        self.assertEqual(entries["chrome.exe"], "1")
+        self.assertEqual(len(entries), 34)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@
   },
   "expected_mode_by_hint": {},
   "baseline_mode": "optimized",
+  "baseline_workload": null,
   "preflight": {
     "require_power_source": "AC",
     "require_oem_variables": {
