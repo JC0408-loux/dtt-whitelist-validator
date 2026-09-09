@@ -52,6 +52,9 @@ machine. This is normal and common — a test machine will never have all 34.
 
 ### The two cuts through that chain
 
+The window's first tab is **Action Set** (`runner.py`, `dtt-wl-validator run`);
+its widgets and tests still use the older `test`/`results` spelling.
+
 The **Workload Hint** tab (`workload.py`, `dtt-wl-validator workload`) runs the
 identical procedure but takes its verdict from the third line of the diagram —
 DTT's `Workload` condition value, the "Last Known Value" the DTT page shows —
@@ -250,7 +253,7 @@ Supporting material:
 python -m unittest discover -s tests -t .
 ```
 
-**90 tests.** They must all pass before you claim anything is done. Configure
+**91 tests.** They must all pass before you claim anything is done. Configure
 this as the repository's test command so it runs automatically.
 
 ### The tests are the only ground truth available off-hardware

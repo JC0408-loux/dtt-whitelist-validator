@@ -163,7 +163,8 @@ class GuiTests(unittest.TestCase):
         self.pump(0.2)
         reports = os.path.join(self.workdir, "reports")
         files = os.listdir(reports)
-        summary = [f for f in files if "_report_" in f and f.endswith(".csv")]
+        summary = [f for f in files
+                   if f.startswith("dtt_action_set_report_") and f.endswith(".csv")]
         self.assertEqual(len(summary), 1)
 
         with open(os.path.join(reports, summary[0]), encoding="utf-8-sig") as handle:
@@ -284,6 +285,23 @@ class GuiTests(unittest.TestCase):
 
     # -- workload hint tab -------------------------------------------------
 
+    def test_always_on_top_is_one_setting_shared_by_both_run_tabs(self):
+        # It is a single window attribute; two boxes that could disagree would
+        # be lying to whichever tab the tester is looking at.
+        boxes = []
+        for tab in (self.app.tab_test, self.app.tab_workload):
+            for frame in tab.winfo_children():
+                boxes += [w for w in frame.winfo_children()
+                          if w.winfo_class() == "TCheckbutton"
+                          and w.cget("text") == "Always on top"]
+        self.assertEqual(len(boxes), 2)
+        self.assertEqual({str(box.cget("variable")) for box in boxes},
+                         {str(self.app.var_topmost)})
+
+        self.app.var_topmost.set(False)
+        self.app._apply_topmost()
+        self.assertFalse(bool(self.app.attributes("-topmost")))
+
     def test_the_workload_tab_reports_what_dtt_whitelists(self):
         self.load_whitelist()
         self.pump(0.2)
@@ -328,7 +346,7 @@ class GuiTests(unittest.TestCase):
         self.pump(0.2)
         reports = os.listdir(os.path.join(self.workdir, "reports"))
         summary = [f for f in reports
-                   if f.startswith("dtt_workload_report_") and f.endswith(".csv")]
+                   if f.startswith("dtt_workload_hint_report_") and f.endswith(".csv")]
         self.assertEqual(len(summary), 1)
         with open(os.path.join(self.workdir, "reports", summary[0]),
                   encoding="utf-8-sig") as handle:

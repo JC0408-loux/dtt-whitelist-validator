@@ -151,21 +151,23 @@ makes it the neutral baseline the runner returns to between test cases.
 The application uses a custom icon (`icon/DTT_App_Icon.ico`) in the portable
 release, replacing the default tkinter feather icon.
 
-**Test** shows what is happening right now: the application being tested, the
-action set DTT currently reports, and a banner that turns green on a pass and
-red on a fail. It stays on top by default so it remains readable while the
-application under test holds the foreground -- being on top is not the same as
-having focus, so it does not disturb the measurement. Finished cases build up
-in a list underneath, coloured the same way.
+**Action Set** shows what is happening right now: the application being
+tested, the action set DTT currently reports, and a banner that turns green on
+a pass and red on a fail. It stays on top by default so it remains readable
+while the application under test holds the foreground -- being on top is not
+the same as having focus, so it does not disturb the measurement. Finished
+cases build up in a list underneath, coloured the same way. The *Always on top*
+box appears on the Workload Hint tab too; it is one window attribute, so both
+show the same state.
 
 **Workload Hint** runs the same sweep one step earlier in the chain. Instead
 of asking "did the expected action set become active?", it asks "did DTT's
 `Workload` condition take the hint this executable is supposed to assert?" --
 the value the DTT page shows as *Last Known Value* in its Conditions table. It
-uses the same application list as the Test tab, so one folder scan serves both,
-and it reports the expected hint against the detected one per application. See
-[Workload hint or action set?](#workload-hint-or-action-set) for when to use
-which.
+uses the same application list as the Action Set tab, so one folder scan serves
+both, and it reports the expected hint against the detected one per
+application. See [Workload hint or action set?](#workload-hint-or-action-set)
+for when to use which.
 
 ![Workload Hint tab](docs/ui_workload_hint.png)
 
@@ -257,11 +259,11 @@ The platform works in a chain, and the two tabs cut it at different points:
 ```
 foreground application -> APAT asserts a workload hint (1 or 2)
                        -> DTT's "Workload" condition takes that value   <- Workload Hint tab
-                       -> an action set whose minterms include it wins  <- Test tab
+                       -> an action set whose minterms include it wins  <- Action Set tab
                        -> different PL1MAX / PL1MIN are applied
 ```
 
-**Test** is the full-chain check and the one to report against: it proves the
+**Action Set** is the full-chain check and the one to report against: it proves the
 platform actually changed its power limits for that application.
 
 **Workload Hint** checks only the first half. That is the half the whitelist
@@ -273,9 +275,10 @@ higher-priority row preempts it. In every one of those the hint is still
 asserted correctly and the whitelist entry is fine.
 
 So: a failure on both tabs points at the whitelist entry or at APAT. A pass on
-Workload Hint with a failure on Test points at the conditions table instead --
-DTT saw the hint and chose not to act on it, and the Test tab's Detail column
-names the minterm that stopped it.
+Workload Hint with a failure on Action Set points at the conditions table
+instead --
+DTT saw the hint and chose not to act on it, and the Action Set tab's Detail
+column names the minterm that stopped it.
 
 One thing to watch: if the machine already idles at the hint under test with
 nothing whitelisted in the foreground, the case matches the instant it starts
@@ -370,7 +373,7 @@ first, and `run --mode stub` refuses to continue if the check fails.
 
 Three files land in `reports\`:
 
-`dtt_wl_report_<timestamp>.csv` is the summary, one line per application:
+`dtt_action_set_report_<timestamp>.csv` is the summary, one line per application:
 
 ```
 # | application    | APAT results  | pass/fail
@@ -383,17 +386,17 @@ Rounds collapse into one line, and a single failing round makes the whole
 application `fail` -- the action set shown is the one from that failing round,
 so the table says what actually went wrong.
 
-`dtt_wl_details_<timestamp>.csv` keeps every test case: expected and detected
+`dtt_action_set_details_<timestamp>.csv` keeps every test case: expected and detected
 action set, switch and de-assert latency, workload hint, power source,
 temperature, the applied `PL1MAX`/`PL1MIN`, and the failure reason.
 
-`dtt_wl_report_<timestamp>.xlsx` has both, as a green/red *Results* sheet and a
+`dtt_action_set_report_<timestamp>.xlsx` has both, as a green/red *Results* sheet and a
 *Details* sheet, plus a *Summary* whose verdict distinguishes `FAIL` from
 `INTERMITTENT`. Raise `run.rounds` above 1 to catch a mode switch that works
 most of the time: a single sweep cannot tell intermittent from reliable.
 
 The Workload Hint tab and `dtt-wl-validator workload` write their own pair,
-`dtt_workload_report_<timestamp>.csv` / `.xlsx`, so a hint check never
+`dtt_workload_hint_report_<timestamp>.csv` / `.xlsx`, so a hint check never
 overwrites a whitelist report:
 
 ```

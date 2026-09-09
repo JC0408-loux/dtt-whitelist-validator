@@ -200,7 +200,7 @@ class ValidatorApp(tk.Tk):
         self.tab_workload = ttk.Frame(notebook)
         self.tab_apps = ttk.Frame(notebook)
         self.tab_settings = ttk.Frame(notebook)
-        notebook.add(self.tab_test, text="  Test  ")
+        notebook.add(self.tab_test, text="  Action Set  ")
         notebook.add(self.tab_workload, text="  Workload Hint  ")
         notebook.add(self.tab_apps, text="  Application Path  ")
         notebook.add(self.tab_settings, text="  Settings  ")
@@ -210,7 +210,11 @@ class ValidatorApp(tk.Tk):
         self._build_apps_tab()
         self._build_settings_tab()
 
-    # -- test tab ----------------------------------------------------------
+    # -- action set tab ----------------------------------------------------
+    #
+    # The original tab, named for what it judges a case on: the action set DTT
+    # makes active. The Workload Hint tab below judges the hint that selects
+    # it. Widget names here keep the older `test`/`results` spelling.
 
     def _build_test_tab(self):
         frame = self.tab_test
@@ -328,14 +332,17 @@ class ValidatorApp(tk.Tk):
                                         command=self._export_workload,
                                         state="disabled")
         self.wl_btn_export.pack(side="left", padx=6)
-        ttk.Button(controls, text="Reload whitelist from DTT",
-                   command=self._reload_whitelist).pack(side="right")
+        # Bound to the same variable as the Action Set tab's box: it is one
+        # window attribute, so the two must not be able to disagree.
+        ttk.Checkbutton(controls, text="Always on top",
+                        variable=self.var_topmost,
+                        command=self._apply_topmost).pack(side="right")
 
         self.wl_lbl_scan = ttk.Label(
             frame, foreground="#55637a", justify="left",
-            text="Press \"Reload whitelist from DTT\" to read which executables "
-                 "the platform whitelists and which hint each one asserts, then "
-                 "scan a folder on the Application Path tab.")
+            text="Press \"Reload whitelist from DTT\" on the Application Path "
+                 "tab to read which executables the platform whitelists and "
+                 "which hint each one asserts, then scan a folder there.")
         self.wl_lbl_scan.pack(anchor="w", padx=4, pady=(0, 6))
 
         self.wl_progress = ttk.Progressbar(frame, mode="determinate")
